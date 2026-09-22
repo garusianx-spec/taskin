@@ -62,6 +62,11 @@ in columns.
 `.latin-inline` isolates Latin fragments (emails, file names, task codes) inside RTL copy
 with `direction: ltr; unicode-bidi: isolate`.
 
+A native `<input type="number">` cannot render Persian numerals, so numeric fields use
+`NumberField`: a text input with `inputMode="numeric"` (which still raises the numeric keypad),
+Persian digits on display, `parseLocalisedNumber` accepting Persian/Arabic-Indic/ASCII input,
+and steppers replacing the lost native spinner.
+
 ---
 
 ## Theme engine
@@ -168,13 +173,14 @@ src/
 │   ├── ui/                 # Headless-ish primitives: Button, Switch, Modal, Drawer, …
 │   ├── icons/              # ~60 hand-authored Iconsax-style glyphs
 │   ├── layout/             # AppShell, NavRail, TopAppBar, BottomNav, GlobalSearch
-│   ├── chat/               # ChatView, MessageBubble, VoicePlayer, composer, action sheet
-│   ├── tasks/              # Kanban, List, Gantt, Inspector, Jalali date picker, swipe rows
+│   ├── calendar/           # Month-year picker, interactive day cells, day index
+│   ├── chat/               # ChatView, MessageBubble, VoicePlayer, pinned banner, forwarding
+│   ├── tasks/              # Kanban, List, Gantt, Inspector, reminders, recurrence, swipe rows
 │   ├── rbac/               # Permission matrix + advanced editing modal
 │   └── theme/              # ThemeProvider, ThemePicker
 ├── data/                   # Typed reference data + seed workspace fixture
 ├── hooks/                  # focus trap, scroll lock, roving focus, media query, clock
-├── lib/                    # jalali, formatting, cn, theme bootstrap
+├── lib/                    # jalali, recurrence, reminder, permissions, formatting, theme
 ├── store/                  # Pure reducer + selectors + container provider
 ├── styles/                 # fonts.css, tokens.css
 └── types/                  # The whole domain model
@@ -198,6 +204,45 @@ inspector — because each can be opened from more than one module, and publishe
 as `1.5 × 24 / size`, so a 16px icon and a 24px icon render at an identical 1.5 CSS px —
 uniform optical weight across every toolbar. Variants: `linear`, `twotone` (secondary
 geometry at 40%) and `bold` (secondary geometry filled, used for active nav states).
+
+---
+
+## Scheduling: reminders and recurrence
+
+Reminders are stored as an **offset**, not as a materialised instant, so moving a task's
+deadline moves its reminder with it. Only "زمان دلخواه شمسی" pins an absolute time. Presets
+count back from 18:00 on the due date, since due dates are date-only.
+
+The recurrence engine (`src/lib/recurrence.ts`) steps the series in the **Jalali** calendar,
+not the Gregorian one. "هر ماه" starting on ۳۱ فروردین therefore lands on ۳۱ اردیبهشت rather
+than drifting across a Gregorian month boundary, and a day that does not exist in the target
+month (۳۱ in a 30-day month, or ۳۰ اسفند in a common year) clamps to that month's last day —
+the rule the Iranian civil calendar uses for anniversaries. Expansion is bounded, so a
+`never`-ending series cannot spin.
+
+Recurring tasks are expanded into the calendar's visible window, so a fortnightly review
+appears on every occurrence in the month rather than only on its original due date. The first
+occurrence is the task's own due date and is counted once.
+
+---
+
+## Chat: pinning and forwarding
+
+Pinned messages surface in a sticky banner above the thread. With several pinned it cycles
+behind a segment rail rather than stacking and eating the viewport. "پرش به پیام" scrolls the
+target into view and plays a highlight pulse — the jump first clears the in-chat search,
+because the target may be filtered out of the rendered thread and would otherwise have no node
+to scroll to. Auto-scroll-to-newest is suppressed while a pulse is in flight.
+
+Unpin controls are permission-aware: they read `messages.edit` from the live RBAC matrix
+(`src/lib/permissions.ts`), so revoking the right on the settings screen hides them
+immediately. Every role can still read the banner and jump.
+
+Forwarding offers direct messages, team channels **and project boards** in one searchable
+multi-select list. Selecting a board is not a mis-click: the reducer turns a board target into
+a task carrying the message text and attachment, and the modal says so. Forward provenance
+survives re-forwarding — the origin is kept rather than re-pointed at the relayer — and
+renders as an "ارسال شده از [نام فرستنده اصلی]" header.
 
 ---
 
