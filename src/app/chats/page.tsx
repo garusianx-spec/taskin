@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { conversationById, filterConversations } from '@/store/selectors';
+import { canForwardMessages, canManagePins } from '@/lib/permissions';
 import { PROJECTS } from '@/data/workspace';
 import { AppShell, useShellActions } from '@/components/layout/AppShell';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -83,9 +84,14 @@ interface ChatContentProps {
 
 /** Split out so the composer hook resolves inside the `AppShell` provider. */
 function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentProps) {
-  const { state, dispatch } = useWorkspace();
+  const { state, dispatch, currentUser } = useWorkspace();
   const { openTaskComposer } = useShellActions();
   const conversation = conversationById(state.activeConversationId);
+
+  // Pin/forward rights come from the live RBAC matrix, so revoking them on the settings
+  // screen hides these actions immediately.
+  const canPin = canManagePins(currentUser, state.permissions);
+  const canForward = canForwardMessages(currentUser, state.permissions);
 
   if (!conversation) return null;
 
@@ -113,6 +119,16 @@ function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentPro
       onOpenDetails={() =>
         dispatch({ type: 'open-conversation-details', conversationId: conversation.id })
       }
+      canPin={canPin}
+      canForward={canForward}
+      onTogglePin={(messageId) => dispatch({ type: 'toggle-message-pin', messageId })}
+      onUnpinAll={() => dispatch({ type: 'unpin-all-messages', conversationId: conversation.id })}
+      onForward={(messageId, targets) =>
+        dispatch({ type: 'forward-message', messageId, targets, authorId: currentUserId })
+      }
+      jumpToMessageId={state.jumpToMessageId}
+      onRequestJump={(messageId) => dispatch({ type: 'jump-to-message', messageId })}
+      onJumpHandled={() => dispatch({ type: 'clear-jump-target' })}
     />
   );
 }

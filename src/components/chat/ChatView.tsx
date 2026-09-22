@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Conversation, Message, TaskDraft } from '@/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Conversation, ForwardTarget, Message, TaskDraft } from '@/types';
 import { cn } from '@/lib/cn';
 import { formatDateDivider } from '@/lib/jalali';
 import { formatCount, truncate } from '@/lib/format';
@@ -18,6 +18,8 @@ import { AvatarStack, Badge, EmptyState, IconButton, Input, Tooltip } from '@/co
 import { MessageBubble } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
 import { MessageActionSheet } from './MessageActionSheet';
+import { PinnedBanner } from './PinnedBanner';
+import { ForwardMessageModal } from './ForwardMessageModal';
 import {
   ArrowBackwardIcon,
   HashIcon,
@@ -36,6 +38,15 @@ export interface ChatViewProps {
   readonly onConvertToTask: (draft: TaskDraft) => void;
   readonly onOpenTask: (taskId: string) => void;
   readonly onOpenDetails: () => void;
+  readonly onTogglePin: (messageId: string) => void;
+  readonly onUnpinAll: () => void;
+  readonly onForward: (messageId: string, targets: readonly ForwardTarget[]) => void;
+  readonly canPin: boolean;
+  readonly canForward: boolean;
+  /** Message the shell asked the viewport to scroll to; cleared via `onJumpHandled`. */
+  readonly jumpToMessageId: string | null;
+  readonly onRequestJump: (messageId: string) => void;
+  readonly onJumpHandled: () => void;
   /** Mobile only — returns to the conversation list. */
   readonly onBack?: () => void;
   readonly defaultProjectId: string;
@@ -56,12 +67,24 @@ export function ChatView({
   onOpenDetails,
   onBack,
   defaultProjectId,
+  onTogglePin,
+  onUnpinAll,
+  onForward,
+  canPin,
+  canForward,
+  jumpToMessageId,
+  onRequestJump,
+  onJumpHandled,
 }: ChatViewProps) {
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [inChatQuery, setInChatQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [sheetMessage, setSheetMessage] = useState<Message | null>(null);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const thread = useMemo(
     () => conversationMessages(messages, conversation.id),
@@ -76,9 +99,46 @@ export function ChatView({
 
   const groups = useMemo(() => groupMessagesByDay(visibleThread), [visibleThread]);
   const members = useMemo(() => usersByIds(conversation.memberIds), [conversation.memberIds]);
+  const pinnedMessages = useMemo(() => thread.filter((message) => message.pinned), [thread]);
+
+  /**
+   * Scrolls a message into view and plays a short highlight pulse. Clearing the search first
+   * matters: the target may be filtered out of `visibleThread`, in which case there is no
+   * node to scroll to.
+   */
+  const jumpTo = useCallback(
+    (messageId: string) => {
+      setInChatQuery('');
+      // Wait a frame so a cleared filter has re-rendered the full thread.
+      requestAnimationFrame(() => {
+        const node = messageRefs.current.get(messageId);
+        if (!node) return;
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedId(messageId);
+      });
+    },
+    [],
+  );
+
+  // Drive the pulse from the shell-level jump request, then hand the flag back.
+  useEffect(() => {
+    if (!jumpToMessageId) return;
+    jumpTo(jumpToMessageId);
+    onJumpHandled();
+  }, [jumpToMessageId, jumpTo, onJumpHandled]);
 
   useEffect(() => {
+    if (!highlightedId) return;
+    const timer = window.setTimeout(() => setHighlightedId(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [highlightedId]);
+
+  useEffect(() => {
+    if (highlightedId) return;
     bottomRef.current?.scrollIntoView({ block: 'end' });
+    // `highlightedId` is deliberately read but not tracked: a jump mid-thread must not be
+    // yanked back to the newest message, yet the pulse ending should not re-scroll either.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation.id, thread.length]);
 
   const replyTarget = replyToId ? messageById(messages, replyToId) : undefined;
@@ -197,7 +257,15 @@ export function ChatView({
         )}
       </header>
 
-      <div className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4 sm:px-6">
+      <PinnedBanner
+        pinned={pinnedMessages}
+        canManage={canPin}
+        onJump={onRequestJump}
+        onUnpin={onTogglePin}
+        onUnpinAll={onUnpinAll}
+      />
+
+      <div ref={scrollerRef} className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4 sm:px-6">
         {groups.length === 0 ? (
           <EmptyState
             icon={<MessagesIcon size={26} />}
@@ -220,7 +288,14 @@ export function ChatView({
                   const replied = message.replyToId ? messageById(messages, message.replyToId) : undefined;
 
                   return (
-                    <div key={message.id} className={cn(index > 0 && 'mt-0.5')}>
+                    <div
+                      key={message.id}
+                      ref={(node) => {
+                        if (node) messageRefs.current.set(message.id, node);
+                        else messageRefs.current.delete(message.id);
+                      }}
+                      className={cn(index > 0 && 'mt-0.5', 'scroll-mt-24')}
+                    >
                       <MessageBubble
                         message={message}
                         author={author}
@@ -240,6 +315,16 @@ export function ChatView({
                         onToggleReaction={onToggleReaction}
                         onOpenLinkedTask={onOpenTask}
                         onLongPress={setSheetMessage}
+                        onTogglePin={onTogglePin}
+                        onForward={setForwardMessage}
+                        canPin={canPin}
+                        canForward={canForward}
+                        highlighted={highlightedId === message.id}
+                        forwardedFromName={
+                          message.forwardedFrom
+                            ? (userById(message.forwardedFrom.authorId)?.fullName ?? 'کاربر حذف‌شده')
+                            : null
+                        }
                       />
                     </div>
                   );
@@ -275,6 +360,22 @@ export function ChatView({
         onToggleReaction={(id, emoji) => {
           onToggleReaction(id, emoji);
           setSheetMessage(null);
+        }}
+        onTogglePin={onTogglePin}
+        onForward={(target) => {
+          setSheetMessage(null);
+          setForwardMessage(target);
+        }}
+        canPin={canPin}
+        canForward={canForward}
+      />
+
+      <ForwardMessageModal
+        message={forwardMessage}
+        currentConversationId={conversation.id}
+        onClose={() => setForwardMessage(null)}
+        onForward={(targets) => {
+          if (forwardMessage) onForward(forwardMessage.id, targets);
         }}
       />
     </section>
