@@ -33,7 +33,7 @@ function ChatsShell() {
     [conversations, state.messages, state.chatFilter, state.chatSearch, state.unreadByConversation, state.pinnedConversationIds],
   );
 
-  const active = conversationById(state.activeConversationId);
+  const active = conversationById(conversations, state.activeConversationId);
   const defaultProjectId = PROJECTS[0]?.id ?? '';
 
   return (
@@ -86,7 +86,7 @@ interface ChatContentProps {
 function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentProps) {
   const { state, dispatch, currentUser } = useWorkspace();
   const { openTaskComposer } = useShellActions();
-  const conversation = conversationById(state.activeConversationId);
+  const conversation = conversationById(state.conversations, state.activeConversationId);
 
   // Pin/forward rights come from the live RBAC matrix, so revoking them on the settings
   // screen hides these actions immediately.

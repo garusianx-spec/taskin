@@ -1,6 +1,6 @@
 'use client';
 
-import type { Task } from '@/types';
+import type { Project, Task } from '@/types';
 import { cn } from '@/lib/cn';
 import { describeDeadline } from '@/lib/jalali';
 import { formatCount } from '@/lib/format';
@@ -12,6 +12,7 @@ import { CalendarIcon, FlagIcon, PaperclipIcon, StarFilledIcon, SubtaskIcon } fr
 
 export interface TaskCardProps {
   readonly task: Task;
+  readonly projects: readonly Project[];
   readonly onOpen: (taskId: string) => void;
   readonly selected?: boolean;
   /** Set while this card is the keyboard "picked up" item in the board. */
@@ -27,11 +28,11 @@ export interface TaskCardProps {
  * Board card. Shows priority, Jalali deadline, assignee stack, checklist progress and the
  * attachment count — the five signals a project manager scans a column for.
  */
-export function TaskCard({ task, onOpen, selected = false, grabbed = false, dragHandlers, onKeyDown }: TaskCardProps) {
+export function TaskCard({ task, projects, onOpen, selected = false, grabbed = false, dragHandlers, onKeyDown }: TaskCardProps) {
   const progress = subtaskProgress(task);
   const deadline = describeDeadline(task.dueDate, new Date(), task.status === 'done');
   const assignees = usersByIds(task.assigneeIds);
-  const project = projectById(task.projectId);
+  const project = projectById(projects, task.projectId);
 
   return (
     <article

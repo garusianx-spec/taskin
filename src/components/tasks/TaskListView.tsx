@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Task, TaskStatus } from '@/types';
+import type { Project, Task, TaskStatus } from '@/types';
 import { cn } from '@/lib/cn';
 import { describeDeadline, formatJalali } from '@/lib/jalali';
 import { formatCount, formatFraction } from '@/lib/format';
@@ -13,6 +13,7 @@ import { ChevronDownIcon, FlagIcon, StarFilledIcon, TaskSquareIcon } from '@/com
 
 export interface TaskListViewProps {
   readonly tasks: readonly Task[];
+  readonly projects: readonly Project[];
   readonly onOpenTask: (taskId: string) => void;
   readonly selectedTaskId: string | null;
 }
@@ -37,7 +38,7 @@ const STATUS_RANK: Readonly<Record<TaskStatus, number>> = {
  * Untitled UI data table. Column headers are sort buttons carrying `aria-sort`, and the row
  * itself is the activator so the whole line is one keyboard target.
  */
-export function TaskListView({ tasks, onOpenTask, selectedTaskId }: TaskListViewProps) {
+export function TaskListView({ tasks, projects, onOpenTask, selectedTaskId }: TaskListViewProps) {
   const [sortKey, setSortKey] = useState<SortKey>('due');
   const [ascending, setAscending] = useState(true);
 
@@ -108,7 +109,7 @@ export function TaskListView({ tasks, onOpenTask, selectedTaskId }: TaskListView
             {sorted.map((task) => {
               const progress = subtaskProgress(task);
               const deadline = describeDeadline(task.dueDate, new Date(), task.status === 'done');
-              const project = projectById(task.projectId);
+              const project = projectById(projects, task.projectId);
               const assignees = usersByIds(task.assigneeIds);
 
               return (

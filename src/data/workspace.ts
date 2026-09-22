@@ -163,6 +163,32 @@ export const requireUser = (id: string): User => {
 
 export const CURRENT_USER: User = requireUser(CURRENT_USER_ID);
 
+/* ------------------------------ Sessions ------------------------------ */
+
+export const ACTIVE_SESSIONS = [
+  {
+    id: 'sess-current',
+    device: 'کروم روی ویندوز ۱۱',
+    location: 'تهران، ایران',
+    lastActiveAt: at(0, 9, 5),
+    current: true,
+  },
+  {
+    id: 'sess-mobile',
+    device: 'اپلیکیشن اندروید — پیکسل ۸',
+    location: 'تهران، ایران',
+    lastActiveAt: at(-1, 21, 40),
+    current: false,
+  },
+  {
+    id: 'sess-macbook',
+    device: 'سافاری روی مک‌بوک پرو',
+    location: 'اصفهان، ایران',
+    lastActiveAt: at(-4, 14, 12),
+    current: false,
+  },
+] as const;
+
 /* ------------------------------ Projects ------------------------------ */
 
 export const PROJECTS: readonly Project[] = [
@@ -174,6 +200,7 @@ export const PROJECTS: readonly Project[] = [
     starred: true,
     parentId: null,
     memberIds: ['u-sahar', 'u-arash', 'u-nasim', 'u-payam'],
+    conversationId: 'conv-product',
   },
   {
     id: 'p-core-web',
@@ -183,6 +210,7 @@ export const PROJECTS: readonly Project[] = [
     starred: true,
     parentId: 'p-core',
     memberIds: ['u-arash', 'u-payam'],
+    conversationId: 'conv-release',
   },
   {
     id: 'p-core-mobile',
@@ -192,6 +220,7 @@ export const PROJECTS: readonly Project[] = [
     starred: false,
     parentId: 'p-core',
     memberIds: ['u-arash', 'u-nasim'],
+    conversationId: null,
   },
   {
     id: 'p-campaign',
@@ -201,6 +230,7 @@ export const PROJECTS: readonly Project[] = [
     starred: false,
     parentId: null,
     memberIds: ['u-mahtab', 'u-sahar'],
+    conversationId: 'conv-marketing',
   },
   {
     id: 'p-finance',
@@ -210,6 +240,7 @@ export const PROJECTS: readonly Project[] = [
     starred: false,
     parentId: null,
     memberIds: ['u-leila', 'u-kamran'],
+    conversationId: null,
   },
 ];
 
@@ -270,6 +301,7 @@ export const TASKS: readonly Task[] = [
     description:
       'جریان ورود فعلی سه مرحله دارد و نرخ رها کردن آن ۳۴٪ است. جریان جدید باید ورود با شماره موبایل، رمز یک‌بارمصرف و بازیابی رمز را در حداکثر دو مرحله پوشش دهد.',
     status: 'in-progress',
+    columnId: 'in-progress',
     priority: 'urgent',
     projectId: 'p-core-web',
     assigneeIds: ['u-nasim', 'u-payam'],
@@ -314,6 +346,7 @@ export const TASKS: readonly Task[] = [
     description:
       'در مرورگر سافاری ستون‌های جدول گزارش عملکرد از سمت چپ رندر می‌شوند و سرستون‌ها با بدنه جدول هم‌تراز نیستند.',
     status: 'review',
+    columnId: 'review',
     priority: 'high',
     projectId: 'p-core-web',
     assigneeIds: ['u-payam', 'u-sahar'],
@@ -349,6 +382,7 @@ export const TASKS: readonly Task[] = [
     description:
       'اپلیکیشن موبایل باید در نبود اینترنت وظایف را ذخیره و پس از اتصال همگام کند. سند باید استراتژی حل تعارض را مشخص کند.',
     status: 'todo',
+    columnId: 'todo',
     priority: 'medium',
     projectId: 'p-core-mobile',
     assigneeIds: ['u-arash', 'u-sahar'],
@@ -375,6 +409,7 @@ export const TASKS: readonly Task[] = [
     description:
       'هر فضای کاری باید بتواند پالت برند خود را از میان چهار پالت تعریف‌شده انتخاب کند و انتخاب کاربر بین دستگاه‌ها حفظ شود.',
     status: 'done',
+    columnId: 'done',
     priority: 'high',
     projectId: 'p-core-web',
     assigneeIds: ['u-payam', 'u-nasim', 'u-sahar'],
@@ -402,6 +437,7 @@ export const TASKS: readonly Task[] = [
     description:
       'تقویم انتشار برای سه شبکه اجتماعی از پانزدهم اسفند تا پانزدهم فروردین، شامل متن، تصویر و زمان انتشار.',
     status: 'in-progress',
+    columnId: 'in-progress',
     priority: 'medium',
     projectId: 'p-campaign',
     assigneeIds: ['u-mahtab'],
@@ -438,6 +474,7 @@ export const TASKS: readonly Task[] = [
     description:
       'گزارش پیمانکار امنیت سه مورد با شدت متوسط و یک مورد بحرانی در لایه احراز هویت شناسایی کرده است.',
     status: 'todo',
+    columnId: 'todo',
     priority: 'urgent',
     projectId: 'p-core-web',
     assigneeIds: ['u-arash', 'u-payam', 'u-sahar'],
@@ -464,6 +501,7 @@ export const TASKS: readonly Task[] = [
     title: 'تهیه صورت‌های مالی سه‌ماهه چهارم',
     description: 'جمع‌بندی درآمد و هزینه سه‌ماهه و آماده‌سازی گزارش برای هیئت‌مدیره.',
     status: 'review',
+    columnId: 'review',
     priority: 'high',
     projectId: 'p-finance',
     assigneeIds: ['u-leila'],
@@ -489,6 +527,7 @@ export const TASKS: readonly Task[] = [
     title: 'افزودن نمای گانت شمسی به بورد پروژه',
     description: 'نمای گانت باید بر پایه تقویم هجری شمسی رسم شود و تعطیلات رسمی را متمایز کند.',
     status: 'todo',
+    columnId: 'todo',
     priority: 'low',
     projectId: 'p-core-web',
     assigneeIds: ['u-payam'],
@@ -511,6 +550,7 @@ export const TASKS: readonly Task[] = [
     title: 'یکپارچه‌سازی اعلان‌های درون‌برنامه‌ای با پیامک',
     description: 'اعلان وظایف فوری باید علاوه بر اعلان درون‌برنامه، پیامک هم ارسال کند.',
     status: 'in-progress',
+    columnId: 'in-progress',
     priority: 'medium',
     projectId: 'p-core-mobile',
     assigneeIds: ['u-arash', 'u-sahar'],
@@ -536,6 +576,7 @@ export const TASKS: readonly Task[] = [
     title: 'بهینه‌سازی زمان بارگذاری اولیه داشبورد',
     description: 'زمان تا اولین رندر معنادار روی اتصال ۳G باید زیر دو و نیم ثانیه برسد.',
     status: 'done',
+    columnId: 'done',
     priority: 'medium',
     projectId: 'p-core-web',
     assigneeIds: ['u-payam'],
@@ -570,6 +611,7 @@ export const CONVERSATIONS: readonly Conversation[] = [
     unreadCount: 4,
     tone: 'brand',
     topic: 'هماهنگی روزانه تیم محصول و طراحی',
+    projectId: 'p-core',
   },
   {
     id: 'conv-arash',
@@ -581,6 +623,7 @@ export const CONVERSATIONS: readonly Conversation[] = [
     unreadCount: 2,
     tone: 'violet',
     topic: 'گفتگوی مستقیم',
+    projectId: null,
   },
   {
     id: 'conv-release',
@@ -592,6 +635,7 @@ export const CONVERSATIONS: readonly Conversation[] = [
     unreadCount: 7,
     tone: 'amber',
     topic: 'چک‌لیست انتشار و رفع اشکال‌های بحرانی',
+    projectId: 'p-core-web',
   },
   {
     id: 'conv-nasim',
@@ -603,6 +647,7 @@ export const CONVERSATIONS: readonly Conversation[] = [
     unreadCount: 0,
     tone: 'teal',
     topic: 'گفتگوی مستقیم',
+    projectId: null,
   },
   {
     id: 'conv-marketing',
@@ -614,6 +659,7 @@ export const CONVERSATIONS: readonly Conversation[] = [
     unreadCount: 0,
     tone: 'rose',
     topic: 'برنامه‌ریزی محتوا و بودجه کمپین',
+    projectId: 'p-campaign',
   },
   {
     id: 'conv-announcements',
@@ -625,6 +671,7 @@ export const CONVERSATIONS: readonly Conversation[] = [
     unreadCount: 1,
     tone: 'slate',
     topic: 'اعلان‌های رسمی مدیریت',
+    projectId: null,
   },
 ];
 

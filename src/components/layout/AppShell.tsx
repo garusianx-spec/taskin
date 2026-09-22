@@ -47,7 +47,7 @@ export interface AppShellProps {
  * because each of them can be opened from more than one module.
  */
 export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppShellProps) {
-  const { state, dispatch, currentUser, isPinned, isMuted } = useWorkspace();
+  const { state, dispatch, currentUser, conversations, projects, isPinned, isMuted } = useWorkspace();
   const [composerDraft, setComposerDraft] = useState<TaskDraft | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -56,7 +56,7 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
     state.inspector.kind === 'task' ? taskById(state.tasks, state.inspector.taskId) : undefined;
   const inspectorConversation =
     state.inspector.kind === 'conversation'
-      ? conversationById(state.inspector.conversationId)
+      ? conversationById(conversations, state.inspector.conversationId)
       : undefined;
   const inspectorOpen = Boolean(inspectorTask ?? inspectorConversation);
 
@@ -121,6 +121,7 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
             {inspectorTask && (
               <TaskInspector
                 task={inspectorTask}
+                projects={projects}
                 currentUser={currentUser}
                 onClose={closeInspector}
                 onPatch={(patch) => dispatch({ type: 'patch-task', taskId: inspectorTask.id, patch })}

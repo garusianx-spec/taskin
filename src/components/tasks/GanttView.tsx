@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Task } from '@/types';
+import type { Project, Task } from '@/types';
 import { cn } from '@/lib/cn';
 import {
   JALALI_WEEKDAYS_SHORT,
@@ -22,6 +22,7 @@ import { ChevronBackwardIcon, ChevronForwardIcon, GanttIcon } from '@/components
 
 export interface GanttViewProps {
   readonly tasks: readonly Task[];
+  readonly projects: readonly Project[];
   readonly onOpenTask: (taskId: string) => void;
   readonly selectedTaskId: string | null;
 }
@@ -44,7 +45,7 @@ const WINDOW_DAYS = 28;
  *
  * Thursday and Friday (Jalali weekday indices 5 and 6) are shaded as the Iranian weekend.
  */
-export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps) {
+export function GanttView({ tasks, projects, onOpenTask, selectedTaskId }: GanttViewProps) {
   const [windowStart, setWindowStart] = useState(() => {
     const today = new Date();
     today.setDate(today.getDate() - 7);
@@ -180,7 +181,7 @@ export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps)
           <ul>
             {rows.map(({ task, column, span, clippedStart, clippedEnd }) => {
               const assignees = usersByIds(task.assigneeIds);
-              const project = projectById(task.projectId);
+              const project = projectById(projects, task.projectId);
 
               return (
                 <li

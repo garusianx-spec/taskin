@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { Task, TaskPriority, TaskStatus, User } from '@/types';
+import type { Project, Task, TaskPriority, TaskStatus, User } from '@/types';
 import { cn } from '@/lib/cn';
 import { formatJalali } from '@/lib/jalali';
 import { formatCount, formatFileSize } from '@/lib/format';
@@ -53,6 +53,7 @@ const ATTACHMENT_ICONS = {
 
 export interface TaskInspectorProps {
   readonly task: Task;
+  readonly projects: readonly Project[];
   readonly currentUser: User;
   readonly onClose: () => void;
   readonly onPatch: (patch: TaskPatch) => void;
@@ -72,6 +73,7 @@ export interface TaskInspectorProps {
  */
 export function TaskInspector({
   task,
+  projects,
   currentUser,
   onClose,
   onPatch,
@@ -86,7 +88,7 @@ export function TaskInspector({
 }: TaskInspectorProps) {
   const [comment, setComment] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
-  const project = projectById(task.projectId);
+  const project = projectById(projects, task.projectId);
   const reviewer = task.reviewerId ? userById(task.reviewerId) : undefined;
 
   const submitComment = () => {

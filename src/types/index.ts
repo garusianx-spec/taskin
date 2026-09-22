@@ -150,6 +150,8 @@ export interface Task {
   readonly title: string;
   readonly description: string;
   readonly status: TaskStatus;
+  /** Which board column the card sits in. Defaults to the column whose id is `status`. */
+  readonly columnId: string;
   readonly priority: TaskPriority;
   readonly projectId: string;
   readonly assigneeIds: readonly string[];
@@ -179,6 +181,26 @@ export interface Project {
   readonly starred: boolean;
   readonly parentId: string | null;
   readonly memberIds: readonly string[];
+  /** Conversation spawned alongside the project; null for projects created before linkage. */
+  readonly conversationId: string | null;
+}
+
+/**
+ * A Kanban column.
+ *
+ * Columns are data so workspaces can add their own, but `status` stays a closed union:
+ * every column maps onto one of the four canonical workflow statuses. That keeps filters,
+ * smart views, the Gantt and the calendar working off an exhaustively-switched type while
+ * the board renders whatever columns the project defines.
+ */
+export interface BoardColumn {
+  readonly id: string;
+  readonly title: string;
+  readonly tone: SemanticTone;
+  /** Which canonical status a card takes on when it lands in this column. */
+  readonly mapsTo: TaskStatus;
+  /** Built-in columns cannot be deleted; custom ones can. */
+  readonly custom: boolean;
 }
 
 export type TaskViewMode = 'board' | 'list' | 'gantt';
@@ -253,9 +275,24 @@ export interface Conversation {
   readonly unreadCount: number;
   readonly tone: AvatarTone;
   readonly topic: string;
+  /** Set on channels auto-created for a project, enabling the cross-module jump. */
+  readonly projectId: string | null;
 }
 
 export type ChatFilterId = 'all' | 'direct' | 'groups' | 'unread';
+
+/** Tabs of the shared-media drawer. */
+export type SharedMediaTab = 'media' | 'docs' | 'voice' | 'links';
+
+/** A URL extracted from a message body, with whatever metadata we can derive. */
+export interface LinkPreview {
+  readonly url: string;
+  readonly host: string;
+  readonly title: string;
+  readonly messageId: string;
+  readonly sharedAt: string;
+  readonly sharedById: string;
+}
 
 /* ============================== Calendar & notes ============================== */
 
@@ -324,11 +361,39 @@ export interface ModuleDescriptor {
   readonly href: string;
 }
 
+/** Editable slice of the signed-in user's profile. */
+export interface ProfileDraft {
+  readonly fullName: string;
+  readonly jobTitle: string;
+  readonly initials: string;
+  readonly avatarTone: AvatarTone;
+  readonly presence: PresenceState;
+}
+
+/** A device/browser holding a live session, listed in the security dialog. */
+export interface ActiveSession {
+  readonly id: string;
+  readonly device: string;
+  readonly location: string;
+  readonly lastActiveAt: string;
+  readonly current: boolean;
+}
+
 /** What the right-hand inspector is currently bound to. */
 export type InspectorTarget =
   | { readonly kind: 'none' }
   | { readonly kind: 'task'; readonly taskId: string }
   | { readonly kind: 'conversation'; readonly conversationId: string };
+
+/** Draft handed to the project composer. */
+export interface ProjectDraft {
+  readonly name: string;
+  readonly departmentId: DepartmentId;
+  readonly color: AvatarTone;
+  readonly memberIds: readonly string[];
+  /** Spawns a linked chat channel named after the project. */
+  readonly createGroup: boolean;
+}
 
 /** Draft handed to the task composer when promoting a chat message. */
 export interface TaskDraft {
