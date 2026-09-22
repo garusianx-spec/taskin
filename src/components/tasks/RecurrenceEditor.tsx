@@ -10,7 +10,7 @@ import {
   expandOccurrences,
 } from '@/lib/recurrence';
 import { formatJalali, toPersianDigits } from '@/lib/jalali';
-import { Badge, Select, Switch } from '@/components/ui';
+import { Badge, NumberField, Select, Switch } from '@/components/ui';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { RefreshIcon } from '@/components/icons';
 
@@ -79,7 +79,7 @@ export function RecurrenceEditor({ value, onChange, startDate, className }: Recu
 
       {enabled && value && (
         <>
-          <div className="grid grid-cols-[1fr_7rem] gap-2">
+          <div className="grid grid-cols-[1fr_8.5rem] gap-2">
             <Select
               label="دوره تکرار"
               hideLabel={false}
@@ -91,26 +91,15 @@ export function RecurrenceEditor({ value, onChange, startDate, className }: Recu
                 label: entry.label,
               }))}
             />
-            <label className="flex flex-col gap-1.5">
-              <span className="text-body-sm font-medium text-fg-secondary">هر چند بار</span>
-              <input
-                type="number"
-                min={1}
-                max={99}
-                inputMode="numeric"
-                value={value.interval}
-                onChange={(event) =>
-                  onChange({
-                    ...value,
-                    interval: Math.min(99, Math.max(1, Number(event.target.value) || 1)),
-                  })
-                }
-                aria-label={`فاصله تکرار بر حسب ${
-                  RECURRENCE_FREQUENCIES.find((entry) => entry.id === value.frequency)?.unit ?? ''
-                }`}
-                className="numeric h-9 w-full rounded-lg border border-primary bg-surface px-3 text-body-sm text-fg-primary shadow-xs focus-visible:border-brand"
-              />
-            </label>
+            <NumberField
+              label={`هر چند ${
+                RECURRENCE_FREQUENCIES.find((entry) => entry.id === value.frequency)?.unit ?? ''
+              }`}
+              min={1}
+              max={99}
+              value={value.interval}
+              onChange={(interval) => onChange({ ...value, interval })}
+            />
           </div>
 
           <Select
@@ -134,26 +123,13 @@ export function RecurrenceEditor({ value, onChange, startDate, className }: Recu
           )}
 
           {value.end.kind === 'after-count' && (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-body-sm font-medium text-fg-secondary">تعداد دفعات اجرا</span>
-              <input
-                type="number"
-                min={1}
-                max={365}
-                inputMode="numeric"
-                value={value.end.count}
-                onChange={(event) =>
-                  onChange({
-                    ...value,
-                    end: {
-                      kind: 'after-count',
-                      count: Math.min(365, Math.max(1, Number(event.target.value) || 1)),
-                    },
-                  })
-                }
-                className="numeric h-9 w-full rounded-lg border border-primary bg-surface px-3 text-body-sm text-fg-primary shadow-xs focus-visible:border-brand"
-              />
-            </label>
+            <NumberField
+              label="تعداد دفعات اجرا"
+              min={1}
+              max={365}
+              value={value.end.count}
+              onChange={(count) => onChange({ ...value, end: { kind: 'after-count', count } })}
+            />
           )}
 
           <div className="flex flex-col gap-1.5 rounded-lg bg-sunken p-2.5">

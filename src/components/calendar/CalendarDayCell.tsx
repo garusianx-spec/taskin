@@ -77,26 +77,24 @@ export function CalendarDayCell({
         </span>
 
         {total > 0 && (
-          <span className="flex flex-wrap items-center justify-center gap-1" aria-hidden="true">
-            {pendingCount > 0 && (
-              <span className="numeric inline-flex items-center gap-0.5 rounded-full bg-status-progress-subtle px-1 text-[0.5625rem] font-semibold leading-4 text-status-progress">
-                <span className="size-1 rounded-full bg-status-progress" />
-                {toPersianDigits(pendingCount)}
-              </span>
-            )}
-            {doneCount > 0 && (
-              <span className="numeric inline-flex items-center gap-0.5 rounded-full bg-status-done-subtle px-1 text-[0.5625rem] font-semibold leading-4 text-status-done">
-                <span className="size-1 rounded-full bg-status-done" />
-                {toPersianDigits(doneCount)}
-              </span>
-            )}
-            {eventCount > 0 && (
-              <span className="numeric inline-flex items-center gap-0.5 rounded-full bg-status-review-subtle px-1 text-[0.5625rem] font-semibold leading-4 text-status-review">
-                <span className="size-1 rounded-full bg-status-review" />
-                {toPersianDigits(eventCount)}
-              </span>
-            )}
-          </span>
+          <>
+            {/* Phones: bare dots — three counted chips cannot fit a ~45px cell. */}
+            <span className="flex items-center justify-center gap-1 sm:hidden" aria-hidden="true">
+              {pendingCount > 0 && <span className="size-1.5 rounded-full bg-status-progress" />}
+              {doneCount > 0 && <span className="size-1.5 rounded-full bg-status-done" />}
+              {eventCount > 0 && <span className="size-1.5 rounded-full bg-status-review" />}
+            </span>
+
+            {/* Tablet and up: counted chips at the 11px badge size. */}
+            <span
+              className="hidden flex-wrap items-center justify-center gap-1 sm:flex"
+              aria-hidden="true"
+            >
+              {pendingCount > 0 && <CountChip tone="progress" value={pendingCount} />}
+              {doneCount > 0 && <CountChip tone="done" value={doneCount} />}
+              {eventCount > 0 && <CountChip tone="review" value={eventCount} />}
+            </span>
+          </>
         )}
       </button>
 
@@ -116,5 +114,35 @@ export function CalendarDayCell({
         <AddIcon size={13} />
       </button>
     </div>
+  );
+}
+
+interface CountChipProps {
+  readonly tone: 'progress' | 'done' | 'review';
+  readonly value: number;
+}
+
+function CountChip({ tone, value }: CountChipProps) {
+  const tones = {
+    progress: 'bg-status-progress-subtle text-status-progress',
+    done: 'bg-status-done-subtle text-status-done',
+    review: 'bg-status-review-subtle text-status-review',
+  } as const;
+  const dots = {
+    progress: 'bg-status-progress',
+    done: 'bg-status-done',
+    review: 'bg-status-review',
+  } as const;
+
+  return (
+    <span
+      className={cn(
+        'numeric inline-flex items-center gap-0.5 rounded-full px-1 text-micro font-semibold leading-4',
+        tones[tone],
+      )}
+    >
+      <span className={cn('size-1 rounded-full', dots[tone])} />
+      {toPersianDigits(value)}
+    </span>
   );
 }
