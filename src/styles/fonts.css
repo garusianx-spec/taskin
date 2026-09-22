@@ -1,0 +1,33 @@
+/*
+ * IRANYekanX (ایران‌یکان ایکس) — self-hosted WOFF2.
+ *
+ * Two masters ship in `public/fonts`. Each @font-face declares a weight RANGE, so the
+ * browser synthesises nothing and every weight in the type scale resolves to the closest
+ * available master:
+ *   - Medium master    -> 400 (body / micro-copy), 500 (chat), 600 (titles, table heads)
+ *   - ExtraBold master -> 700 (page headers), 800 (workspace headers)
+ *
+ * Adding the remaining masters is a two-line change: drop `IRANYekanWebRegular.woff2`,
+ * `IRANYekanWebSemiBold.woff2` or `IRANYekanWebBold.woff2` into `public/fonts` and narrow
+ * the ranges below (e.g. Medium becomes `font-weight: 500;`). No component changes needed —
+ * components only ever reference numeric weights through Tailwind's `font-*` utilities.
+ */
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('/fonts/IRANYekanWebMedium.woff2') format('woff2');
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+  /* U+0600–06FF Arabic, U+FB50–FDFF & U+FE70–FEFF presentation forms, U+0000–00FF Latin */
+  unicode-range: U+0000-00FF, U+0600-06FF, U+200C-200F, U+2010-2027, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('/fonts/IRANYekanWebExtraBold.woff2') format('woff2');
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0600-06FF, U+200C-200F, U+2010-2027, U+FB50-FDFF, U+FE70-FEFF;
+}
