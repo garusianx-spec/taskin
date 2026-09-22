@@ -50,6 +50,8 @@ export interface ChatViewProps {
   readonly onJumpHandled: () => void;
   /** Present when this conversation is the channel of a project. */
   readonly onOpenProjectBoard: (() => void) | null;
+  readonly focusComposer: boolean;
+  readonly onComposerFocused: () => void;
   /** Mobile only — returns to the conversation list. */
   readonly onBack?: () => void;
   readonly defaultProjectId: string;
@@ -79,6 +81,8 @@ export function ChatView({
   onRequestJump,
   onJumpHandled,
   onOpenProjectBoard,
+  focusComposer,
+  onComposerFocused,
 }: ChatViewProps) {
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [inChatQuery, setInChatQuery] = useState('');
@@ -356,6 +360,8 @@ export function ChatView({
 
       <ChatComposer
         conversationTitle={conversation.title}
+        autoFocus={focusComposer}
+        onAutoFocusHandled={onComposerFocused}
         replyPreview={replyPreview}
         onCancelReply={() => setReplyToId(null)}
         onSend={(text) => {

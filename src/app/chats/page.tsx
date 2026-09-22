@@ -20,8 +20,10 @@ export default function ChatsPage() {
 
 function ChatsShell() {
   const { state, dispatch, currentUser, conversations, unreadFor, isPinned, totalUnread } = useWorkspace();
-  // Mobile: the sidebar is the list screen until a conversation is opened.
-  const [mobileDetail, setMobileDetail] = useState(false);
+  // Mobile: the sidebar is the list screen until a conversation is opened. Arriving from
+  // another module (e.g. "ارسال پیام" in the directory) already picked a thread, so open
+  // straight onto it rather than dropping the user back on the list.
+  const [mobileDetail, setMobileDetail] = useState(state.focusComposer);
 
   const visible = useMemo(
     () =>
@@ -131,6 +133,8 @@ function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentPro
       jumpToMessageId={state.jumpToMessageId}
       onRequestJump={(messageId) => dispatch({ type: 'jump-to-message', messageId })}
       onJumpHandled={() => dispatch({ type: 'clear-jump-target' })}
+      focusComposer={state.focusComposer}
+      onComposerFocused={() => dispatch({ type: 'focus-composer-handled' })}
       onOpenProjectBoard={
         conversation.projectId
           ? () => {

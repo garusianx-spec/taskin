@@ -23,6 +23,7 @@ import type {
   TaskViewMode,
 } from '@/types';
 import { PERMISSION_ACTIONS, PERMISSION_MODULES } from '@/data/reference';
+import { USERS } from '@/data/workspace';
 
 export interface WorkspaceState {
   readonly tasks: readonly Task[];
@@ -724,15 +725,16 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
 
       // No thread yet — open a fresh one rather than dropping the user on an empty list.
       const id = nextId('conv');
+      const counterpart = USERS.find((user) => user.id === action.userId);
       const conversation: Conversation = {
         id,
         kind: 'direct',
-        title: action.userId,
+        title: counterpart?.fullName ?? 'گفتگوی جدید',
         memberIds: [action.currentUserId, action.userId],
         pinned: false,
         muted: false,
         unreadCount: 0,
-        tone: 'slate',
+        tone: counterpart?.avatarTone ?? 'slate',
         topic: 'گفتگوی مستقیم',
         projectId: null,
       };
