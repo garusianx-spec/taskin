@@ -8,6 +8,9 @@ import { formatFileSize } from '@/lib/format';
 import { toISODate } from '@/lib/jalali';
 import { Avatar, Badge, Button, Checkbox, Input, Modal, Select, Textarea } from '@/components/ui';
 import { JalaliDatePicker } from './JalaliDatePicker';
+import { ReminderPicker } from './ReminderPicker';
+import { RecurrenceEditor } from './RecurrenceEditor';
+import { SubtaskList } from './SubtaskList';
 import { ConvertToTaskIcon, FlagIcon, PaperclipIcon, TaskSquareIcon } from '@/components/icons';
 
 export interface CreateTaskModalProps {
@@ -18,6 +21,12 @@ export interface CreateTaskModalProps {
 }
 
 const today = (): string => toISODate(new Date());
+
+let draftSubtaskSeq = 0;
+const nextDraftSubtaskId = (): string => {
+  draftSubtaskSeq += 1;
+  return `draft-subtask-${draftSubtaskSeq}`;
+};
 
 /** Shared blank draft so every entry point into the composer starts from one shape. */
 export const BLANK_TASK_DRAFT: TaskDraft = {
@@ -183,6 +192,60 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
             })}
           </div>
         </fieldset>
+
+        <section className="rounded-xl border border-secondary p-3">
+          <SubtaskList
+            subtasks={form.subtasks}
+            taskTitle={form.title || 'وظیفه جدید'}
+            onToggle={(subtaskId) =>
+              setForm((current) => ({
+                ...current,
+                subtasks: current.subtasks.map((subtask) =>
+                  subtask.id === subtaskId ? { ...subtask, done: !subtask.done } : subtask,
+                ),
+              }))
+            }
+            onAdd={(title) =>
+              setForm((current) => ({
+                ...current,
+                subtasks: [
+                  ...current.subtasks,
+                  { id: nextDraftSubtaskId(), title, done: false, assigneeId: null },
+                ],
+              }))
+            }
+            onRemove={(subtaskId) =>
+              setForm((current) => ({
+                ...current,
+                subtasks: current.subtasks.filter((subtask) => subtask.id !== subtaskId),
+              }))
+            }
+            onMove={(subtaskId, delta) =>
+              setForm((current) => {
+                const index = current.subtasks.findIndex((subtask) => subtask.id === subtaskId);
+                const target = index + delta;
+                if (index === -1 || target < 0 || target >= current.subtasks.length) return current;
+                const next = [...current.subtasks];
+                const [moved] = next.splice(index, 1);
+                if (!moved) return current;
+                next.splice(target, 0, moved);
+                return { ...current, subtasks: next };
+              })
+            }
+          />
+        </section>
+
+        <ReminderPicker
+          value={form.reminder}
+          dueDate={form.dueDate ?? today()}
+          onChange={(reminder) => setForm((current) => ({ ...current, reminder }))}
+        />
+
+        <RecurrenceEditor
+          value={form.recurrence}
+          startDate={form.dueDate ?? today()}
+          onChange={(recurrence) => setForm((current) => ({ ...current, recurrence }))}
+        />
 
         {form.attachments.length > 0 && (
           <div className="flex flex-col gap-2">

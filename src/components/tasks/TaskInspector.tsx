@@ -22,6 +22,8 @@ import {
 import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { SubtaskList } from './SubtaskList';
 import { JalaliDatePicker } from './JalaliDatePicker';
+import { ReminderPicker } from './ReminderPicker';
+import { RecurrenceEditor } from './RecurrenceEditor';
 import type { TaskPatch } from '@/store/workspace-reducer';
 import {
   ArchiveIcon,
@@ -60,6 +62,8 @@ export interface TaskInspectorProps {
   readonly onRemoveSubtask: (subtaskId: string) => void;
   readonly onMoveSubtask: (subtaskId: string, delta: number) => void;
   readonly onAddComment: (body: string, replyToId: string | null) => void;
+  readonly onReminderChange: (reminder: Task['reminder']) => void;
+  readonly onRecurrenceChange: (recurrence: Task['recurrence']) => void;
 }
 
 /**
@@ -77,6 +81,8 @@ export function TaskInspector({
   onRemoveSubtask,
   onMoveSubtask,
   onAddComment,
+  onReminderChange,
+  onRecurrenceChange,
 }: TaskInspectorProps) {
   const [comment, setComment] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
@@ -190,6 +196,19 @@ export function TaskInspector({
               />
             </Field>
           </div>
+        </section>
+
+        <section aria-label="یادآوری و تکرار" className="flex flex-col gap-3">
+          <ReminderPicker
+            value={task.reminder}
+            dueDate={task.dueDate}
+            onChange={onReminderChange}
+          />
+          <RecurrenceEditor
+            value={task.recurrence}
+            startDate={task.dueDate}
+            onChange={onRecurrenceChange}
+          />
         </section>
 
         <section aria-label="توضیحات وظیفه">

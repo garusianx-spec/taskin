@@ -144,6 +144,12 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
                     replyToId,
                   })
                 }
+                onReminderChange={(reminder) =>
+                  dispatch({ type: 'set-task-reminder', taskId: inspectorTask.id, reminder })
+                }
+                onRecurrenceChange={(recurrence) =>
+                  dispatch({ type: 'set-task-recurrence', taskId: inspectorTask.id, recurrence })
+                }
               />
             )}
 

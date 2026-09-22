@@ -7,6 +7,7 @@ import { formatCount } from '@/lib/format';
 import { priorityLabel, priorityTone } from '@/data/reference';
 import { projectById, subtaskProgress, usersByIds } from '@/store/selectors';
 import { AvatarStack, Badge, ProgressBar } from '@/components/ui';
+import { TaskMetaBadges } from './TaskMetaBadges';
 import { CalendarIcon, FlagIcon, PaperclipIcon, StarFilledIcon, SubtaskIcon } from '@/components/icons';
 
 export interface TaskCardProps {
@@ -95,6 +96,7 @@ export function TaskCard({ task, onOpen, selected = false, grabbed = false, drag
               <SubtaskIcon size={13} />
             </span>
           )}
+          <TaskMetaBadges task={task} compact />
         </div>
         {assignees.length > 0 && <AvatarStack members={assignees} max={3} size="xs" />}
       </div>
