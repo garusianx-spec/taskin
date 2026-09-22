@@ -12,11 +12,16 @@ import { Drawer } from '@/components/ui';
 import { TaskInspector } from '@/components/tasks/TaskInspector';
 import { ConversationInspector } from '@/components/chat/ConversationInspector';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
+import { EditProfileModal } from '@/components/account/EditProfileModal';
+import { SecurityModal } from '@/components/account/SecurityModal';
+import { SignedOutView } from '@/components/account/SignedOutView';
 
 interface ShellActions {
   /** Opens the task composer. Pass a draft to pre-fill it (e.g. from a chat message). */
   readonly openTaskComposer: (draft: TaskDraft | null) => void;
   readonly openGlobalSearch: () => void;
+  readonly openProfile: () => void;
+  readonly openSecurity: () => void;
 }
 
 const ShellActionsContext = createContext<ShellActions | null>(null);
@@ -47,10 +52,13 @@ export interface AppShellProps {
  * because each of them can be opened from more than one module.
  */
 export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppShellProps) {
-  const { state, dispatch, currentUser, conversations, projects, isPinned, isMuted } = useWorkspace();
+  const { state, dispatch, currentUser, conversations, projects, sessions, isPinned, isMuted } =
+    useWorkspace();
   const [composerDraft, setComposerDraft] = useState<TaskDraft | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
 
   const inspectorTask =
     state.inspector.kind === 'task' ? taskById(state.tasks, state.inspector.taskId) : undefined;
@@ -66,11 +74,26 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
   }, []);
 
   const actions = useMemo<ShellActions>(
-    () => ({ openTaskComposer, openGlobalSearch: () => setSearchOpen(true) }),
+    () => ({
+      openTaskComposer,
+      openGlobalSearch: () => setSearchOpen(true),
+      openProfile: () => setProfileOpen(true),
+      openSecurity: () => setSecurityOpen(true),
+    }),
     [openTaskComposer],
   );
 
   const closeInspector = useCallback(() => dispatch({ type: 'close-inspector' }), [dispatch]);
+
+  // Signing out tears down the whole workspace surface, not just the popover.
+  if (!state.signedIn) {
+    return (
+      <SignedOutView
+        fullName={currentUser.fullName}
+        onSignIn={() => dispatch({ type: 'sign-in' })}
+      />
+    );
+  }
 
   return (
     <ShellActionsContext.Provider value={actions}>
@@ -181,6 +204,23 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
             setComposerOpen(false);
             setComposerDraft(null);
           }}
+        />
+
+        <EditProfileModal
+          open={profileOpen}
+          onClose={() => setProfileOpen(false)}
+          user={currentUser}
+          onSave={(profile) => dispatch({ type: 'update-profile', profile })}
+        />
+
+        <SecurityModal
+          open={securityOpen}
+          onClose={() => setSecurityOpen(false)}
+          sessions={sessions}
+          onRevokeSession={(sessionId) => dispatch({ type: 'revoke-session', sessionId })}
+          onChangePassword={() =>
+            dispatch({ type: 'announce', message: 'رمز عبور با موفقیت تغییر کرد.' })
+          }
         />
 
         <GlobalSearchModal
