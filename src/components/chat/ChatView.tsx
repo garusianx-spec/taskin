@@ -102,6 +102,9 @@ export function ChatView({
     dueDate: null,
     sourceMessageId: message.id,
     attachments: message.body.kind === 'file' ? [message.body.attachment] : [],
+    subtasks: [],
+    reminder: null,
+    recurrence: null,
   });
 
   const attachmentCount = thread.filter((message) => message.body.kind === 'file').length;

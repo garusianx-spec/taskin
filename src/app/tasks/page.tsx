@@ -13,6 +13,7 @@ import { TaskListView } from '@/components/tasks/TaskListView';
 import { GanttView } from '@/components/tasks/GanttView';
 import { SwipeableTaskRow } from '@/components/tasks/SwipeableTaskRow';
 import { PostponeSheet } from '@/components/tasks/PostponeSheet';
+import { BLANK_TASK_DRAFT } from '@/components/tasks/CreateTaskModal';
 import { Badge, Button, EmptyState, SegmentedControl } from '@/components/ui';
 import { AddIcon, FilterIcon, GanttIcon, KanbanIcon, ListIcon, TaskSquareIcon } from '@/components/icons';
 
@@ -158,15 +159,9 @@ function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskW
             onMoveTask={(taskId, status) => dispatch({ type: 'move-task', taskId, status })}
             onCreateTask={(status) =>
               openTaskComposer({
-                title: '',
-                description: '',
+                ...BLANK_TASK_DRAFT,
                 projectId: state.projectFilterId ?? tasks[0]?.projectId ?? '',
                 status,
-                priority: 'medium',
-                assigneeIds: [],
-                dueDate: null,
-                sourceMessageId: null,
-                attachments: [],
               })
             }
             onAnnounce={(message) => dispatch({ type: 'announce', message })}

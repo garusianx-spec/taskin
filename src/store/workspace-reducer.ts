@@ -1,5 +1,6 @@
 import type {
   ChatFilterId,
+  ForwardTarget,
   InspectorTarget,
   Message,
   PermissionActionId,
@@ -9,6 +10,8 @@ import type {
   SmartViewId,
   Task,
   TaskDraft,
+  TaskRecurrence,
+  TaskReminder,
   TaskStatus,
   TaskViewMode,
 } from '@/types';
@@ -29,6 +32,8 @@ export interface WorkspaceState {
   readonly projectFilterId: string | null;
   readonly chatSearch: string;
   readonly taskSearch: string;
+  /** Message the viewport should scroll to and pulse; cleared once the jump completes. */
+  readonly jumpToMessageId: string | null;
   /** Text pushed to the shell's `aria-live` region after a non-visual state change. */
   readonly announcement: string;
 }
@@ -58,6 +63,18 @@ export type WorkspaceAction =
   | { readonly type: 'toggle-reaction'; readonly messageId: string; readonly emoji: string; readonly userId: string }
   | { readonly type: 'mark-conversation-read'; readonly conversationId: string }
   | { readonly type: 'toggle-conversation-pin'; readonly conversationId: string }
+  | { readonly type: 'set-task-reminder'; readonly taskId: string; readonly reminder: TaskReminder | null }
+  | { readonly type: 'set-task-recurrence'; readonly taskId: string; readonly recurrence: TaskRecurrence | null }
+  | { readonly type: 'toggle-message-pin'; readonly messageId: string }
+  | { readonly type: 'unpin-all-messages'; readonly conversationId: string }
+  | { readonly type: 'jump-to-message'; readonly messageId: string }
+  | { readonly type: 'clear-jump-target' }
+  | {
+      readonly type: 'forward-message';
+      readonly messageId: string;
+      readonly targets: readonly ForwardTarget[];
+      readonly authorId: string;
+    }
   | { readonly type: 'toggle-conversation-mute'; readonly conversationId: string }
   | { readonly type: 'set-permission'; readonly role: RoleId; readonly module: PermissionModuleId; readonly action: PermissionActionId; readonly value: boolean }
   | { readonly type: 'set-module-permissions'; readonly role: RoleId; readonly module: PermissionModuleId; readonly value: boolean }
@@ -86,6 +103,24 @@ const mapTask = (
   taskId: string,
   update: (task: Task) => Task,
 ): readonly Task[] => tasks.map((task) => (task.id === taskId ? update(task) : task));
+
+/** One-line summary of a message, used as the title of a task created by forwarding. */
+function summarise(message: Message): string {
+  switch (message.body.kind) {
+    case 'text':
+      return message.body.text.length > 70 ? `${message.body.text.slice(0, 69)}…` : message.body.text;
+    case 'file':
+      return message.body.attachment.name;
+    case 'voice':
+      return 'پیام صوتی ارجاع‌شده';
+    case 'system':
+      return message.body.text;
+    default: {
+      const exhaustive: never = message.body;
+      return exhaustive;
+    }
+  }
+}
 
 let sequence = 0;
 /** Monotonic id for client-created entities. Stable within a session, never collides with seeds. */
@@ -254,12 +289,14 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         startDate,
         dueDate: draft.dueDate ?? startDate,
         createdAt: new Date().toISOString(),
-        subtasks: [],
+        subtasks: draft.subtasks,
         attachments: draft.attachments,
         comments: [],
         labels: [],
         starred: false,
         sourceMessageId: draft.sourceMessageId,
+        reminder: draft.reminder,
+        recurrence: draft.recurrence,
       };
 
       return {
@@ -287,6 +324,8 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         edited: false,
         linkedTaskId: null,
         readByIds: [],
+        pinned: false,
+        forwardedFrom: null,
       };
       return { ...state, messages: [...state.messages, message] };
     }
@@ -342,6 +381,118 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
           ? state.mutedConversationIds.filter((id) => id !== action.conversationId)
           : [...state.mutedConversationIds, action.conversationId],
       };
+
+    case 'set-task-reminder':
+      return {
+        ...state,
+        tasks: mapTask(state.tasks, action.taskId, (task) => ({ ...task, reminder: action.reminder })),
+      };
+
+    case 'set-task-recurrence':
+      return {
+        ...state,
+        tasks: mapTask(state.tasks, action.taskId, (task) => ({
+          ...task,
+          recurrence: action.recurrence,
+        })),
+      };
+
+    case 'toggle-message-pin': {
+      const target = state.messages.find((message) => message.id === action.messageId);
+      if (!target) return state;
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.id === action.messageId ? { ...message, pinned: !message.pinned } : message,
+        ),
+        announcement: target.pinned
+          ? 'پین پیام برداشته شد.'
+          : 'پیام در بالای گفتگو پین شد.',
+      };
+    }
+
+    case 'unpin-all-messages':
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.conversationId === action.conversationId && message.pinned
+            ? { ...message, pinned: false }
+            : message,
+        ),
+        announcement: 'همه پیام‌های پین‌شده این گفتگو برداشته شدند.',
+      };
+
+    case 'jump-to-message':
+      return { ...state, jumpToMessageId: action.messageId };
+
+    case 'clear-jump-target':
+      return { ...state, jumpToMessageId: null };
+
+    case 'forward-message': {
+      const source = state.messages.find((message) => message.id === action.messageId);
+      if (!source || action.targets.length === 0) return state;
+
+      // A forward keeps the original author in `forwardedFrom` while the *sender* becomes
+      // the author of the new message, which is what the "ارسال شده از" header reads back.
+      const origin = source.forwardedFrom ?? {
+        authorId: source.authorId,
+        conversationId: source.conversationId,
+        originalMessageId: source.id,
+        sentAt: source.sentAt,
+      };
+
+      const conversationTargets = action.targets.filter((target) => target.kind !== 'board');
+      const boardTargets = action.targets.filter((target) => target.kind === 'board');
+
+      const forwarded: Message[] = conversationTargets.map((target) => ({
+        id: nextId('m'),
+        conversationId: target.id,
+        authorId: action.authorId,
+        sentAt: new Date().toISOString(),
+        body: source.body,
+        replyToId: null,
+        reactions: [],
+        edited: false,
+        linkedTaskId: null,
+        readByIds: [],
+        pinned: false,
+        forwardedFrom: origin,
+      }));
+
+      // Forwarding into a board produces a task, not a message.
+      const today = new Date();
+      const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const boardTasks: Task[] = boardTargets.map((target, index) => ({
+        id: nextId('t'),
+        code: `FWD-${state.tasks.length + index + 1}`,
+        title: summarise(source),
+        description: `ارجاع‌شده از گفتگو توسط ${action.authorId}`,
+        status: 'todo',
+        priority: 'medium',
+        projectId: target.id,
+        assigneeIds: [action.authorId],
+        reviewerId: null,
+        startDate: todayIso,
+        dueDate: todayIso,
+        createdAt: new Date().toISOString(),
+        subtasks: [],
+        attachments: source.body.kind === 'file' ? [source.body.attachment] : [],
+        comments: [],
+        labels: ['فوروارد از گفتگو'],
+        starred: false,
+        sourceMessageId: source.id,
+        reminder: null,
+        recurrence: null,
+      }));
+
+      const names = action.targets.map((target) => target.title).join('، ');
+      return {
+        ...state,
+        messages: [...state.messages, ...forwarded],
+        tasks: boardTasks.length ? [...boardTasks, ...state.tasks] : state.tasks,
+        announcement: `پیام به ${names} فوروارد شد.`,
+      };
+    }
 
     case 'set-permission': {
       if (isLocked(action.role)) return state;

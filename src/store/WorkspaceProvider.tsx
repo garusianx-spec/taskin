@@ -50,6 +50,7 @@ const initialState: WorkspaceState = {
   projectFilterId: null,
   chatSearch: '',
   taskSearch: '',
+  jumpToMessageId: null,
   announcement: '',
 };
 

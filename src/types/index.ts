@@ -112,6 +112,38 @@ export interface TaskComment {
   readonly replyToId: string | null;
 }
 
+/* ------------------------------ Reminders ------------------------------ */
+
+/** How far ahead of the due date the reminder fires. */
+export type ReminderOffsetId = '15m' | '30m' | '1h' | '1d' | 'custom';
+
+export interface TaskReminder {
+  readonly offset: ReminderOffsetId;
+  /**
+   * Only meaningful when `offset` is `'custom'`: an explicit ISO-8601 instant chosen with
+   * the Jalali date/time picker. Null for the preset offsets, which are derived from the
+   * due date at read time so that moving the deadline moves the reminder with it.
+   */
+  readonly customAt: string | null;
+}
+
+/* ------------------------------ Recurrence ------------------------------ */
+
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+/** When the series stops generating occurrences. */
+export type RecurrenceEnd =
+  | { readonly kind: 'never' }
+  | { readonly kind: 'on-date'; readonly date: string }
+  | { readonly kind: 'after-count'; readonly count: number };
+
+export interface TaskRecurrence {
+  readonly frequency: RecurrenceFrequency;
+  /** Repeat every N periods — "هر ۲ هفته یک‌بار" is `weekly` with an interval of 2. */
+  readonly interval: number;
+  readonly end: RecurrenceEnd;
+}
+
 export interface Task {
   readonly id: string;
   readonly code: string;
@@ -133,6 +165,10 @@ export interface Task {
   readonly starred: boolean;
   /** Set when the task was created from a chat message via "تبدیل به وظیفه". */
   readonly sourceMessageId: string | null;
+  /** Null when no reminder is configured. */
+  readonly reminder: TaskReminder | null;
+  /** Null for a one-off task; present turns the card into a series. */
+  readonly recurrence: TaskRecurrence | null;
 }
 
 export interface Project {
@@ -165,6 +201,15 @@ export interface MessageReaction {
   readonly userIds: readonly string[];
 }
 
+/** Provenance stamped onto a message that was forwarded out of another conversation. */
+export interface ForwardOrigin {
+  readonly authorId: string;
+  /** Null when the source conversation is no longer visible to the current user. */
+  readonly conversationId: string | null;
+  readonly originalMessageId: string;
+  readonly sentAt: string;
+}
+
 export interface Message {
   readonly id: string;
   readonly conversationId: string;
@@ -177,6 +222,25 @@ export interface Message {
   /** Populated once the message has been promoted to a task. */
   readonly linkedTaskId: string | null;
   readonly readByIds: readonly string[];
+  /** Pinned messages surface in the sticky banner at the top of the conversation. */
+  readonly pinned: boolean;
+  /** Non-null when this message was forwarded from elsewhere. */
+  readonly forwardedFrom: ForwardOrigin | null;
+}
+
+/**
+ * A place a message can be forwarded to. Boards are included because forwarding into a
+ * project board creates a task rather than a message, which the reducer handles separately.
+ */
+export type ForwardTargetKind = 'direct' | 'channel' | 'board';
+
+export interface ForwardTarget {
+  readonly id: string;
+  readonly kind: ForwardTargetKind;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly tone: AvatarTone;
+  readonly initials: string;
 }
 
 export interface Conversation {
@@ -277,4 +341,8 @@ export interface TaskDraft {
   readonly dueDate: string | null;
   readonly sourceMessageId: string | null;
   readonly attachments: readonly Attachment[];
+  /** Checklist built inside the composer before the task exists. */
+  readonly subtasks: readonly Subtask[];
+  readonly reminder: TaskReminder | null;
+  readonly recurrence: TaskRecurrence | null;
 }

@@ -304,6 +304,8 @@ export const TASKS: readonly Task[] = [
     labels: ['احراز هویت', 'ریزش کاربر'],
     starred: true,
     sourceMessageId: null,
+    reminder: { offset: '1d', customAt: null },
+    recurrence: null,
   },
   {
     id: 't-102',
@@ -337,6 +339,8 @@ export const TASKS: readonly Task[] = [
     labels: ['RTL', 'رفع اشکال'],
     starred: false,
     sourceMessageId: 'm-14',
+    reminder: { offset: '1h', customAt: null },
+    recurrence: null,
   },
   {
     id: 't-103',
@@ -361,6 +365,8 @@ export const TASKS: readonly Task[] = [
     labels: ['معماری', 'موبایل'],
     starred: false,
     sourceMessageId: null,
+    reminder: null,
+    recurrence: null,
   },
   {
     id: 't-104',
@@ -386,6 +392,8 @@ export const TASKS: readonly Task[] = [
     labels: ['دیزاین سیستم'],
     starred: true,
     sourceMessageId: null,
+    reminder: null,
+    recurrence: null,
   },
   {
     id: 't-105',
@@ -420,6 +428,8 @@ export const TASKS: readonly Task[] = [
     labels: ['نوروز', 'محتوا'],
     starred: false,
     sourceMessageId: null,
+    reminder: { offset: '1d', customAt: null },
+    recurrence: { frequency: 'weekly', interval: 2, end: { kind: 'after-count', count: 6 } },
   },
   {
     id: 't-106',
@@ -445,6 +455,8 @@ export const TASKS: readonly Task[] = [
     labels: ['امنیت', 'بحرانی'],
     starred: false,
     sourceMessageId: null,
+    reminder: { offset: '15m', customAt: null },
+    recurrence: null,
   },
   {
     id: 't-107',
@@ -468,6 +480,8 @@ export const TASKS: readonly Task[] = [
     labels: ['گزارش مالی'],
     starred: false,
     sourceMessageId: null,
+    reminder: { offset: '1d', customAt: null },
+    recurrence: { frequency: 'monthly', interval: 3, end: { kind: 'never' } },
   },
   {
     id: 't-108',
@@ -488,6 +502,8 @@ export const TASKS: readonly Task[] = [
     labels: ['تقویم شمسی'],
     starred: false,
     sourceMessageId: null,
+    reminder: null,
+    recurrence: null,
   },
   {
     id: 't-109',
@@ -511,6 +527,8 @@ export const TASKS: readonly Task[] = [
     labels: ['اعلان'],
     starred: false,
     sourceMessageId: null,
+    reminder: { offset: '30m', customAt: null },
+    recurrence: { frequency: 'weekly', interval: 1, end: { kind: 'on-date', date: dateOnly(45) } },
   },
   {
     id: 't-110',
@@ -534,6 +552,8 @@ export const TASKS: readonly Task[] = [
     labels: ['کارایی'],
     starred: false,
     sourceMessageId: null,
+    reminder: null,
+    recurrence: null,
   },
 ];
 
@@ -628,6 +648,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-nasim', 'u-arash', 'u-mahtab'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-02',
@@ -640,6 +662,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-sahar', 'u-arash'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-03',
@@ -652,6 +676,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-sahar'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-04',
@@ -664,6 +690,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-sahar', 'u-nasim'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-05',
@@ -679,6 +707,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: [],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-06',
@@ -691,6 +721,8 @@ export const MESSAGES: readonly Message[] = [
     edited: true,
     linkedTaskId: null,
     readByIds: ['u-mahtab'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-07',
@@ -706,6 +738,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: 't-101',
     readByIds: ['u-sahar'],
+    pinned: true,
+    forwardedFrom: null,
   },
   {
     id: 'm-10',
@@ -718,6 +752,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-sahar'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-11',
@@ -730,6 +766,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: 't-106',
     readByIds: ['u-sahar'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-12',
@@ -742,6 +780,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-arash'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-13',
@@ -754,6 +794,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: [],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-14',
@@ -769,6 +811,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: 't-102',
     readByIds: ['u-arash', 'u-sahar'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-15',
@@ -781,6 +825,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-payam'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-16',
@@ -793,6 +839,30 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-arash'],
+    pinned: false,
+    forwardedFrom: null,
+  },
+  {
+    id: 'm-16b',
+    conversationId: 'conv-release',
+    authorId: 'u-sahar',
+    sentAt: at(-1, 17, 52),
+    body: {
+      kind: 'text',
+      text: 'گزارش تست نفوذ رسید. یک مورد بحرانی در لایه احراز هویت دارد.',
+    },
+    replyToId: null,
+    reactions: [],
+    edited: false,
+    linkedTaskId: 't-106',
+    readByIds: ['u-arash'],
+    pinned: false,
+    forwardedFrom: {
+      authorId: 'u-arash',
+      conversationId: 'conv-arash',
+      originalMessageId: 'm-10',
+      sentAt: at(-1, 16, 20),
+    },
   },
   {
     id: 'm-17',
@@ -805,6 +875,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: [],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-18',
@@ -817,6 +889,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: [],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-20',
@@ -829,6 +903,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-sahar'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-21',
@@ -841,6 +917,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-nasim'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-22',
@@ -853,6 +931,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: 't-105',
     readByIds: ['u-sahar', 'u-leila'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-23',
@@ -865,6 +945,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-mahtab'],
+    pinned: false,
+    forwardedFrom: null,
   },
   {
     id: 'm-24',
@@ -880,6 +962,8 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: [],
+    pinned: true,
+    forwardedFrom: null,
   },
 ];
 

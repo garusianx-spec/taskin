@@ -19,7 +19,8 @@ export interface CreateTaskModalProps {
 
 const today = (): string => toISODate(new Date());
 
-const BLANK_DRAFT: TaskDraft = {
+/** Shared blank draft so every entry point into the composer starts from one shape. */
+export const BLANK_TASK_DRAFT: TaskDraft = {
   title: '',
   description: '',
   projectId: PROJECTS[0]?.id ?? '',
@@ -29,6 +30,9 @@ const BLANK_DRAFT: TaskDraft = {
   dueDate: null,
   sourceMessageId: null,
   attachments: [],
+  subtasks: [],
+  reminder: null,
+  recurrence: null,
 };
 
 /**
@@ -36,13 +40,13 @@ const BLANK_DRAFT: TaskDraft = {
  * "تبدیل به وظیفه" — in which case the source message and any attachment ride along.
  */
 export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskModalProps) {
-  const [form, setForm] = useState<TaskDraft>(BLANK_DRAFT);
+  const [form, setForm] = useState<TaskDraft>(BLANK_TASK_DRAFT);
   const [touched, setTouched] = useState(false);
 
   // Re-seed whenever the modal opens so a chat-sourced draft replaces the previous form.
   useEffect(() => {
     if (!open) return;
-    setForm(draft ?? { ...BLANK_DRAFT, dueDate: today() });
+    setForm(draft ?? { ...BLANK_TASK_DRAFT, dueDate: today() });
     setTouched(false);
   }, [open, draft]);
 
