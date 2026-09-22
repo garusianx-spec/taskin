@@ -5,7 +5,8 @@ import type { AgendaEntryKind, Task } from '@/types';
 import { AGENDA } from '@/data/workspace';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import {
-  JALALI_WEEKDAYS_SHORT,
+  JALALI_WEEKDAYS,
+  JALALI_WEEKDAYS_MEDIUM,
   buildMonthGrid,
   formatJalali,
   gregorianToJalali,
@@ -102,43 +103,11 @@ function CalendarWorkspace() {
 
   return (
     <div className="scrollbar-thin h-full overflow-y-auto">
-      <header className="flex flex-wrap items-center gap-2 border-b border-secondary bg-surface px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 flex-col">
-          <h1 className="text-body-sm font-medium text-fg-tertiary">تقویم و یادداشت</h1>
-          <MonthYearPicker
-            year={cursor.year}
-            month={cursor.month}
-            onChange={(year, month) => setCursor({ year, month })}
-            className="-ms-2"
-          />
-        </div>
-
-        <div className="ms-auto flex items-center gap-1.5">
-          {/* RTL: earlier content lies to the right, so "قبل" points backward. */}
-          <Tooltip content="ماه قبل">
-            <IconButton
-              label="ماه قبل"
-              icon={<ChevronBackwardIcon size={18} />}
-              variant="secondary"
-              onClick={() => step(-1)}
-            />
-          </Tooltip>
-          <Button
-            variant={isToday ? 'tertiary' : 'secondary'}
-            iconStart={<CalendarIcon size={16} />}
-            onClick={goToToday}
-          >
-            امروز
-          </Button>
-          <Tooltip content="ماه بعد">
-            <IconButton
-              label="ماه بعد"
-              icon={<ChevronForwardIcon size={18} />}
-              variant="secondary"
-              onClick={() => step(1)}
-            />
-          </Tooltip>
-        </div>
+      <header className="flex items-center gap-3 border-b border-secondary bg-surface px-4 py-3 sm:px-6">
+        <h1 className="text-heading-sm font-bold text-fg-primary">تقویم و یادداشت</h1>
+        <Badge tone="neutral" size="md" numeric className="ms-auto">
+          {`${formatCount(AGENDA.length)} برنامه ثبت‌شده`}
+        </Badge>
       </header>
 
       <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[1fr_22rem]">
@@ -146,14 +115,59 @@ function CalendarWorkspace() {
           aria-label="نمای ماهانه"
           className="rounded-xl border border-secondary bg-surface p-3 shadow-xs"
         >
+          {/*
+            Navigation sits directly above the grid and is centred on it, not on the page
+            header — which spans the agenda column too and would pull the month off-centre.
+            RTL puts the first child on the right, so "قبل" leads and "بعد" trails, matching
+            the direction each chevron points.
+          */}
+          <div className="relative mb-3 flex items-center justify-center gap-2 pb-3">
+            <Tooltip content="ماه قبل">
+              <IconButton
+                label="ماه قبل"
+                icon={<ChevronBackwardIcon size={18} />}
+                variant="secondary"
+                onClick={() => step(-1)}
+              />
+            </Tooltip>
+
+            <MonthYearPicker
+              year={cursor.year}
+              month={cursor.month}
+              onChange={(year, month) => setCursor({ year, month })}
+            />
+
+            <Tooltip content="ماه بعد">
+              <IconButton
+                label="ماه بعد"
+                icon={<ChevronForwardIcon size={18} />}
+                variant="secondary"
+                onClick={() => step(1)}
+              />
+            </Tooltip>
+
+            {/* Absolutely placed so it cannot shift the centred month/year group. */}
+            <Button
+              variant={isToday ? 'tertiary' : 'secondary'}
+              size="sm"
+              iconStart={<CalendarIcon size={16} />}
+              onClick={goToToday}
+              className="absolute end-0 top-0"
+            >
+              امروز
+            </Button>
+          </div>
+
           <div role="grid" aria-label="تقویم هجری شمسی" className="grid grid-cols-7 gap-1">
-            {JALALI_WEEKDAYS_SHORT.map((day) => (
+            {JALALI_WEEKDAYS.map((day, index) => (
               <div
                 key={day}
                 role="columnheader"
                 className="flex h-8 items-center justify-center text-caption font-semibold text-fg-quaternary"
               >
-                {day}
+                {/* Full names need the room; below `sm` the two-letter form keeps cells square. */}
+                <span className="hidden sm:inline">{day}</span>
+                <span className="sm:hidden">{JALALI_WEEKDAYS_MEDIUM[index]}</span>
               </div>
             ))}
 
