@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import type { TaskDraft } from '@/types';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { conversationById, taskById } from '@/store/selectors';
@@ -57,6 +58,7 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
   const [composerDraft, setComposerDraft] = useState<TaskDraft | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(false);
 
@@ -190,6 +192,23 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
                   dispatch({ type: 'toggle-conversation-mute', conversationId: inspectorConversation.id })
                 }
                 onClose={closeInspector}
+                projectName={
+                  inspectorConversation.projectId
+                    ? (projects.find((p) => p.id === inspectorConversation.projectId)?.name ?? null)
+                    : null
+                }
+                onOpenProjectBoard={
+                  inspectorConversation.projectId
+                    ? () => {
+                        dispatch({
+                          type: 'set-project-filter',
+                          projectId: inspectorConversation.projectId,
+                        });
+                        closeInspector();
+                        router.push('/tasks');
+                      }
+                    : null
+                }
               />
             )}
           </Drawer>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { conversationById, filterConversations } from '@/store/selectors';
 import { canForwardMessages, canManagePins } from '@/lib/permissions';
@@ -86,6 +87,7 @@ interface ChatContentProps {
 function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentProps) {
   const { state, dispatch, currentUser } = useWorkspace();
   const { openTaskComposer } = useShellActions();
+  const router = useRouter();
   const conversation = conversationById(state.conversations, state.activeConversationId);
 
   // Pin/forward rights come from the live RBAC matrix, so revoking them on the settings
@@ -129,6 +131,14 @@ function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentPro
       jumpToMessageId={state.jumpToMessageId}
       onRequestJump={(messageId) => dispatch({ type: 'jump-to-message', messageId })}
       onJumpHandled={() => dispatch({ type: 'clear-jump-target' })}
+      onOpenProjectBoard={
+        conversation.projectId
+          ? () => {
+              dispatch({ type: 'set-project-filter', projectId: conversation.projectId });
+              router.push('/tasks');
+            }
+          : null
+      }
     />
   );
 }

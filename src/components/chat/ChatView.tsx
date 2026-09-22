@@ -14,7 +14,7 @@ import {
   userById,
   usersByIds,
 } from '@/store/selectors';
-import { AvatarStack, Badge, EmptyState, IconButton, Input, Tooltip } from '@/components/ui';
+import { AvatarStack, Badge, Button, EmptyState, IconButton, Input, Tooltip } from '@/components/ui';
 import { MessageBubble } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
 import { MessageActionSheet } from './MessageActionSheet';
@@ -27,6 +27,7 @@ import {
   MessagesIcon,
   PaperclipIcon,
   SearchIcon,
+  TaskSquareIcon,
 } from '@/components/icons';
 
 export interface ChatViewProps {
@@ -47,6 +48,8 @@ export interface ChatViewProps {
   readonly jumpToMessageId: string | null;
   readonly onRequestJump: (messageId: string) => void;
   readonly onJumpHandled: () => void;
+  /** Present when this conversation is the channel of a project. */
+  readonly onOpenProjectBoard: (() => void) | null;
   /** Mobile only — returns to the conversation list. */
   readonly onBack?: () => void;
   readonly defaultProjectId: string;
@@ -75,6 +78,7 @@ export function ChatView({
   jumpToMessageId,
   onRequestJump,
   onJumpHandled,
+  onOpenProjectBoard,
 }: ChatViewProps) {
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [inChatQuery, setInChatQuery] = useState('');
@@ -204,6 +208,20 @@ export function ChatView({
               </span>
             </span>
           </button>
+
+          {onOpenProjectBoard && (
+            <Tooltip content="مشاهده بورد وظایف پروژه">
+              <Button
+                size="sm"
+                variant="secondary"
+                iconStart={<TaskSquareIcon size={15} />}
+                onClick={onOpenProjectBoard}
+                className="hidden sm:inline-flex"
+              >
+                بورد وظایف پروژه
+              </Button>
+            </Tooltip>
+          )}
 
           <Tooltip content="جستجو در گفتگو">
             <IconButton
