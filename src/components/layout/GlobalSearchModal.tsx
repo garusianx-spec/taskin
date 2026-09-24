@@ -1,8 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Message, Task } from '@/types';
-import { CONVERSATIONS } from '@/data/workspace';
+import type { Conversation, Message, Task } from '@/types';
 import { statusLabel, statusTone } from '@/data/reference';
 import { formatJalali } from '@/lib/jalali';
 import { truncate } from '@/lib/format';
@@ -14,6 +13,7 @@ export interface GlobalSearchModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly tasks: readonly Task[];
+  readonly conversations: readonly Conversation[];
   readonly messages: readonly Message[];
   readonly onOpenTask: (taskId: string) => void;
   readonly onOpenConversation: (conversationId: string) => void;
@@ -26,6 +26,7 @@ export function GlobalSearchModal({
   open,
   onClose,
   tasks,
+  conversations,
   messages,
   onOpenTask,
   onOpenConversation,
@@ -48,11 +49,13 @@ export function GlobalSearchModal({
   const conversationResults = useMemo(
     () =>
       normalised
-        ? CONVERSATIONS.filter((conversation) =>
-            `${conversation.title} ${conversation.topic}`.toLowerCase().includes(normalised),
-          ).slice(0, RESULT_LIMIT)
+        ? conversations
+            .filter((conversation) =>
+              `${conversation.title} ${conversation.topic}`.toLowerCase().includes(normalised),
+            )
+            .slice(0, RESULT_LIMIT)
         : [],
-    [normalised],
+    [conversations, normalised],
   );
 
   const messageResults = useMemo(
@@ -78,7 +81,7 @@ export function GlobalSearchModal({
         <Input
           label="عبارت جستجو"
           hideLabel
-          autoFocus
+          data-autofocus
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -167,7 +170,7 @@ export function GlobalSearchModal({
             <ul className="flex flex-col gap-1">
               {messageResults.map((message) => {
                 const author = userById(message.authorId);
-                const conversation = CONVERSATIONS.find((entry) => entry.id === message.conversationId);
+                const conversation = conversations.find((entry) => entry.id === message.conversationId);
                 return (
                   <li key={message.id}>
                     <button

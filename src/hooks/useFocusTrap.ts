@@ -37,8 +37,11 @@ export function useFocusTrap(
 
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
+    // Inside a trap, fields opt into initial focus with `data-autofocus` rather than React's
+    // `autoFocus`: the latter focuses during commit, before this effect runs, so the trap
+    // would record the field — not the opener — as the element to restore focus to.
     const focusFirst = () => {
-      const explicit = initialFocusRef?.current;
+      const explicit = initialFocusRef?.current ?? container.querySelector<HTMLElement>('[data-autofocus]');
       if (explicit) {
         explicit.focus();
         return;

@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import type { Task, TaskPriority, TaskStatus, User } from '@/types';
+import type { BoardColumn, Task, TaskPriority, User } from '@/types';
 import { cn } from '@/lib/cn';
 import { formatJalali } from '@/lib/jalali';
 import { formatCount, formatFileSize } from '@/lib/format';
-import { TASK_PRIORITIES, TASK_STATUSES, statusTone } from '@/data/reference';
+import { TASK_PRIORITIES, statusTone } from '@/data/reference';
 import { USERS } from '@/data/workspace';
-import { projectById, userById } from '@/store/selectors';
+import { columnForTask, projectById, userById } from '@/store/selectors';
 import {
   Avatar,
   Badge,
@@ -22,6 +22,7 @@ import {
 import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { SubtaskList } from './SubtaskList';
 import { JalaliDatePicker } from './JalaliDatePicker';
+import { ColumnDot } from './ColumnDot';
 import type { TaskPatch } from '@/store/workspace-reducer';
 import {
   ArchiveIcon,
@@ -52,8 +53,11 @@ const ATTACHMENT_ICONS = {
 export interface TaskInspectorProps {
   readonly task: Task;
   readonly currentUser: User;
+  /** Board columns, custom ones included — the status picker moves the card between them. */
+  readonly columns: readonly BoardColumn[];
   readonly onClose: () => void;
   readonly onPatch: (patch: TaskPatch) => void;
+  readonly onMoveToColumn: (columnId: string) => void;
   readonly onToggleStar: () => void;
   readonly onToggleSubtask: (subtaskId: string) => void;
   readonly onAddSubtask: (title: string) => void;
@@ -69,8 +73,10 @@ export interface TaskInspectorProps {
 export function TaskInspector({
   task,
   currentUser,
+  columns,
   onClose,
   onPatch,
+  onMoveToColumn,
   onToggleStar,
   onToggleSubtask,
   onAddSubtask,
@@ -81,6 +87,7 @@ export function TaskInspector({
   const [comment, setComment] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const project = projectById(task.projectId);
+  const column = columnForTask(columns, task);
   const reviewer = task.reviewerId ? userById(task.reviewerId) : undefined;
 
   const submitComment = () => {
@@ -97,7 +104,7 @@ export function TaskInspector({
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <Badge tone={statusTone(task.status)} size="sm" dot>
-              {TASK_STATUSES.find((entry) => entry.id === task.status)?.label ?? task.status}
+              {column?.title ?? task.status}
             </Badge>
             <span className="numeric latin-inline text-micro font-medium text-fg-quaternary">{task.code}</span>
           </div>
@@ -123,12 +130,13 @@ export function TaskInspector({
             <Select
               label="وضعیت وظیفه"
               size="sm"
-              value={task.status}
-              onValueChange={(status: TaskStatus) => onPatch({ status })}
-              options={TASK_STATUSES.map((entry) => ({
+              value={column?.id ?? task.status}
+              onValueChange={onMoveToColumn}
+              options={columns.map((entry) => ({
                 value: entry.id,
-                label: entry.label,
-                icon: <span className={cn('size-2 rounded-full', statusDotClass(entry.id))} aria-hidden="true" />,
+                label: entry.title,
+                icon: <ColumnDot column={entry} />,
+                ...(entry.custom ? { description: 'ستون سفارشی' } : {}),
               }))}
             />
           </Field>
@@ -383,16 +391,6 @@ function Field({ label, children }: { readonly label: string; readonly children:
       {children}
     </div>
   );
-}
-
-function statusDotClass(status: TaskStatus): string {
-  const map: Readonly<Record<TaskStatus, string>> = {
-    todo: 'bg-status-todo',
-    'in-progress': 'bg-status-progress',
-    review: 'bg-status-review',
-    done: 'bg-status-done',
-  };
-  return map[status];
 }
 
 interface PeoplePickerProps {

@@ -133,6 +133,39 @@ export interface Task {
   readonly starred: boolean;
   /** Set when the task was created from a chat message via "تبدیل به وظیفه". */
   readonly sourceMessageId: string | null;
+  /**
+   * Custom board column the card sits in. `null` places it in the built-in column for its
+   * `status`, which is where every seeded task starts.
+   */
+  readonly boardColumnId: string | null;
+  /**
+   * Where the task was when it last entered "done", so the quick-complete checkbox can put it
+   * back on uncheck. `null` whenever the task is not done, or was created done.
+   */
+  readonly reopenTo: TaskPlacement | null;
+}
+
+/** A task's position on the board: its workflow status plus an optional custom column. */
+export interface TaskPlacement {
+  readonly status: TaskStatus;
+  readonly boardColumnId: string | null;
+}
+
+/**
+ * Fixed accent set shared by user-defined surfaces — custom board columns and note colour
+ * tags. Unlike the brand ramp these never move with the workspace accent, so a "red" column
+ * stays red whichever palette the organisation picks.
+ */
+export type TagTone = 'gray' | 'blue' | 'teal' | 'green' | 'amber' | 'red' | 'pink' | 'violet';
+
+export interface BoardColumn {
+  readonly id: string;
+  readonly title: string;
+  /** Workflow status a task takes when it lands in this column. */
+  readonly status: TaskStatus;
+  /** Custom columns paint with a picked tag tone; built-ins (`null`) use their status tone. */
+  readonly tone: TagTone | null;
+  readonly custom: boolean;
 }
 
 export interface Project {
@@ -193,20 +226,121 @@ export interface Conversation {
 
 export type ChatFilterId = 'all' | 'direct' | 'groups' | 'unread';
 
-/* ============================== Calendar & notes ============================== */
+/* ============================== Calendar ============================== */
 
-export type AgendaEntryKind = 'task' | 'meeting' | 'note' | 'reminder';
+/**
+ * Scheduled items that are not tasks. Task deadlines are never stored here: the calendar
+ * derives them from the live task list, so completing or rescheduling a task moves its
+ * calendar badge with no second source of truth to keep in sync.
+ */
+export type CalendarEventKind = 'meeting' | 'reminder' | 'milestone';
 
-export interface AgendaEntry {
+export interface CalendarEvent {
   readonly id: string;
-  readonly kind: AgendaEntryKind;
+  readonly kind: CalendarEventKind;
+  readonly title: string;
+  /** Local `YYYY-MM-DD`; rendered as Jalali. */
+  readonly date: string;
+  /** 24-hour `HH:mm` in ASCII digits; rendered with Persian digits. */
+  readonly startTime: string | null;
+  readonly endTime: string | null;
+  readonly projectId: string | null;
+  readonly attendeeIds: readonly string[];
+  readonly description: string;
+}
+
+export interface CalendarEventDraft {
+  readonly kind: CalendarEventKind;
   readonly title: string;
   readonly date: string;
   readonly startTime: string | null;
   readonly endTime: string | null;
-  readonly relatedTaskId: string | null;
-  readonly tone: SemanticTone;
+  readonly projectId: string | null;
+  readonly attendeeIds: readonly string[];
+  readonly description: string;
 }
+
+/* ============================== Notes ============================== */
+
+export type NotebookId = 'personal' | 'work' | 'ideas' | 'meetings';
+
+export interface Note {
+  readonly id: string;
+  readonly notebook: NotebookId;
+  readonly title: string;
+  /** Markdown subset: headings, emphasis, bullet lists and `- [ ]` checklists. */
+  readonly body: string;
+  readonly colors: readonly TagTone[];
+  readonly pinned: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  /** Set once the note has been promoted with "تبدیل یادداشت به وظیفه". */
+  readonly linkedTaskId: string | null;
+}
+
+export interface NotePatch {
+  readonly title?: string;
+  readonly body?: string;
+  readonly notebook?: NotebookId;
+  readonly colors?: readonly TagTone[];
+  readonly pinned?: boolean;
+}
+
+/* ============================== Notifications ============================== */
+
+/** What happened. Mentions and replies are the two kinds the "اشاره‌ها" tab collects. */
+export type NotificationEvent =
+  | { readonly kind: 'task-assigned' }
+  | { readonly kind: 'status-changed'; readonly from: TaskStatus; readonly to: TaskStatus }
+  | { readonly kind: 'comment'; readonly excerpt: string }
+  | { readonly kind: 'mention'; readonly excerpt: string }
+  | { readonly kind: 'reply'; readonly excerpt: string };
+
+export type NotificationTarget =
+  | { readonly kind: 'task'; readonly taskId: string }
+  | { readonly kind: 'conversation'; readonly conversationId: string };
+
+export interface AppNotification {
+  readonly id: string;
+  readonly actorId: string;
+  readonly createdAt: string;
+  readonly read: boolean;
+  readonly event: NotificationEvent;
+  /** Title of the task or conversation the event happened in. */
+  readonly subject: string;
+  readonly target: NotificationTarget;
+}
+
+export type NotificationFilterId = 'all' | 'unread' | 'mentions';
+
+/* ============================== Account & security ============================== */
+
+export interface Invitation {
+  readonly id: string;
+  readonly email: string;
+  readonly role: RoleId;
+  readonly department: DepartmentId;
+  readonly message: string;
+  readonly invitedAt: string;
+  readonly invitedById: string;
+}
+
+export interface LoginSession {
+  readonly id: string;
+  readonly device: string;
+  readonly location: string;
+  readonly lastActiveAt: string;
+  /** The browser this app is running in — it cannot revoke itself from the list. */
+  readonly current: boolean;
+}
+
+/** The parts of the signed-in member's profile they can change themselves. */
+export interface ProfileSettings {
+  readonly presence: PresenceState;
+  readonly statusMessage: string;
+}
+
+export type SessionStatus = 'active' | 'signed-out';
 
 /* ============================== Activity feed ============================== */
 
@@ -235,7 +369,7 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 /** The resolved mode actually written to `data-theme`. */
 export type ResolvedThemeMode = 'light' | 'dark';
 
-export type AccentId = 'indigo' | 'teal' | 'violet' | 'amber';
+export type AccentId = 'indigo' | 'teal' | 'violet' | 'rose' | 'amber' | 'ocean';
 
 export interface AccentDescriptor {
   readonly id: AccentId;
@@ -243,6 +377,8 @@ export interface AccentDescriptor {
   readonly subtitle: string;
   /** Preview swatch only — rendered as an inline style, never as a Tailwind class. */
   readonly swatch: readonly [string, string, string];
+  /** The palette's 600 step, shown as the hex a brand team would recognise. */
+  readonly primaryHex: string;
 }
 
 export interface ThemeConfig {
@@ -252,7 +388,7 @@ export interface ThemeConfig {
 
 /* ============================== Navigation ============================== */
 
-export type ModuleId = 'feed' | 'chats' | 'tasks' | 'calendar' | 'directory';
+export type ModuleId = 'feed' | 'chats' | 'tasks' | 'calendar' | 'notes' | 'directory';
 
 export interface ModuleDescriptor {
   readonly id: ModuleId;
@@ -266,15 +402,20 @@ export type InspectorTarget =
   | { readonly kind: 'task'; readonly taskId: string }
   | { readonly kind: 'conversation'; readonly conversationId: string };
 
-/** Draft handed to the task composer when promoting a chat message. */
+/** Draft handed to the task composer, blank or pre-filled from a message, note or date. */
 export interface TaskDraft {
   readonly title: string;
   readonly description: string;
   readonly projectId: string;
   readonly status: TaskStatus;
+  /** Custom board column to land in; `null` means the built-in column for `status`. */
+  readonly boardColumnId: string | null;
   readonly priority: TaskPriority;
   readonly assigneeIds: readonly string[];
   readonly dueDate: string | null;
   readonly sourceMessageId: string | null;
+  readonly sourceNoteId: string | null;
+  /** Checklist items carried over from a note; each becomes a subtask. */
+  readonly subtaskTitles: readonly string[];
   readonly attachments: readonly Attachment[];
 }

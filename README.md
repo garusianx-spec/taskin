@@ -16,6 +16,7 @@ npm run dev        # http://localhost:3000
 npm run build      # production build
 npm run typecheck  # tsc --noEmit (strict, noUncheckedIndexedAccess)
 npm run lint       # eslint (next/core-web-vitals + next/typescript)
+npm run check:contrast  # WCAG AA audit of every palette × mode (see Theme engine)
 ```
 
 ---
@@ -70,8 +71,10 @@ Three layers, all in `src/styles/tokens.css`:
 
 1. **Primitive ramps** — raw `R G B` channel triplets, so Tailwind's `<alpha-value>` slot
    works (`bg-surface/80`, `text-fg-primary/60`).
-2. **Accent alias** — `--brand-50…900` is re-pointed by `[data-accent]`. Components never
-   name a palette.
+2. **Accent alias** — `--brand-50…900` is re-pointed by `[data-accent]`, together with three
+   accessible anchors: `--brand-solid` (fill carrying white text), `--brand-solid-hover` and
+   `--brand-ink` (brand text on light surfaces). Components never name a palette or a ramp
+   step for text or fills.
 3. **Semantic surfaces** — `--bg-*`, `--fg-*`, `--border-*`, `--status-*`. These flip in dark
    mode; every component reads only this layer.
 
@@ -83,14 +86,26 @@ background, `#161B26` cards, `#1F242F` borders.
 
 ### Accent palettes
 
-Swappable Primary 50→900 scales, selected with `data-accent`:
+Six swappable Primary 50→900 scales, selected with `data-accent`, each in light and OLED dark:
 
-| Accent   | Name                | Primary 600 |
-| -------- | ------------------- | ----------- |
-| `indigo` | برند کلاسیک          | `#3538CD`   |
-| `teal`   | تمرکز و شفافیت       | `#0E766E`   |
-| `violet` | استارتاپ مدرن        | `#6941C6`   |
-| `amber`  | سازمانی گرم          | `#B54708`   |
+| Accent   | Name              | Primary 600 | Accessible anchors                          |
+| -------- | ----------------- | ----------- | ------------------------------------------- |
+| `indigo` | سازمانی پیش‌فرض    | `#3538CD`   | default (600 fill, 600 ink) — the default   |
+| `teal`   | تمرکز عمیق         | `#0E766E`   | ink → 700 (600 on its hover tint is 4.46:1) |
+| `violet` | استارتاپ مدرن      | `#6941C6`   | default                                     |
+| `rose`   | رز شرابی           | `#9E165F`   | default                                     |
+| `amber`  | گرمای سازمانی      | `#B54708`   | ring → 600 (500 is 2.2:1 on white)          |
+| `ocean`  | اقیانوس عمیق       | `#088AB2`   | fill + ink → 700 (600 is 3.9:1 with white)  |
+
+A palette keeps its 600 identity colour for borders, rings and swatches; only the steps that
+carry text move where the 600 would miss AA. `npm run check:contrast` parses `tokens.css`,
+resolves the cascade for all 6 palettes × 2 modes and asserts 26 text/fill pairs each (body
+text, brand text on surface/canvas/tint, button fills, status and tag badges, selected-card
+borders and focus rings). In dark mode `--border-brand` uses the 400 step, which clears 3:1 on
+charcoal under every palette, so selected and hovered cards share one border treatment.
+
+Custom Kanban columns and note colour tags draw from a separate fixed set of eight **tag tones**
+(`--tag-*`) that do not follow the accent, so a red column stays red under every palette.
 
 ### Status tokens
 
@@ -106,8 +121,8 @@ attributes it would have produced itself. The theme also syncs across open tabs 
 `storage` event, and falls back to an in-memory theme when storage is blocked.
 
 **Zero hard-coded hex values exist in any component class.** The only raw hex outside
-`tokens.css` is the four-swatch preview in the theme picker, which must render all four
-palettes at once and therefore cannot read the single active `--brand-*` variable.
+`tokens.css` is the swatch preview in the theme picker, which must render all six palettes
+at once and therefore cannot read the single active `--brand-*` variable.
 
 ---
 
@@ -167,9 +182,15 @@ src/
 ├── components/
 │   ├── ui/                 # Headless-ish primitives: Button, Switch, Modal, Drawer, …
 │   ├── icons/              # ~60 hand-authored Iconsax-style glyphs
-│   ├── layout/             # AppShell, NavRail, TopAppBar, BottomNav, GlobalSearch
-│   ├── chat/               # ChatView, MessageBubble, VoicePlayer, composer, action sheet
+│   ├── overlays/           # OverlayProvider (global dialog store) + OverlayHost
+│   ├── layout/             # AppShell, NavRail, TopAppBar, BottomNav, QuickCreate, search
+│   ├── chat/               # ChatView, MessageBubble, VoicePlayer, composer, new-chat dialog
 │   ├── tasks/              # Kanban, List, Gantt, Inspector, Jalali date picker, swipe rows
+│   ├── calendar/           # Month grid, day summary, event dialog
+│   ├── notes/              # Notebook sidebar, editor, Markdown renderer
+│   ├── notifications/      # Notification centre drawer
+│   ├── account/            # Profile, security & sign-in, sign-out dialogs
+│   ├── directory/          # Invite dialog
 │   ├── rbac/               # Permission matrix + advanced editing modal
 │   └── theme/              # ThemeProvider, ThemePicker
 ├── data/                   # Typed reference data + seed workspace fixture
@@ -188,9 +209,40 @@ is a pure function with a closed, exhaustively-switched action union — it has 
 import and is directly unit-testable. In production the transport layer (React Query, server
 actions) would feed this same reducer; the contract would not change.
 
-`AppShell` owns the cross-module overlays — the task composer, global search and the
-inspector — because each can be opened from more than one module, and publishes
-`useShellActions()` so pages open them without prop-drilling.
+Every modal dialog lives in one global store, `OverlayProvider`, mounted in the root layout
+above all routes. `useOverlays()` opens any of them from anywhere — the rail, a board column,
+a calendar cell, a note — and they survive the route change some flows trigger (creating a
+chat navigates to `/chats`, an event to `/calendar`). The store holds a single closed
+`Overlay` union, so exactly one dialog is open at a time; `OverlayHost` renders each one once
+and is the only place that turns their callbacks into reducer actions. It also binds the
+quick-create shortcuts **N** (new task) and **M** (new chat), matched on `KeyboardEvent.code`
+so they work on a Persian keyboard layout and ignored while typing. `AppShell` keeps only the
+inspector, because that docks into the layout rather than floating over it.
+
+## Modules
+
+- **Tasks** — board, list and Jalali Gantt. The board's columns live in state: the four
+  built-ins plus any added from the dashed «افزودن ستون جدید» card (name + accent colour).
+  Custom columns take part in drag and drop and keyboard moves; tasks in them count as
+  in progress. Every card and row has a quick-complete checkbox: checking moves the task to
+  «انجام شد» with a struck-through, muted title; unchecking returns it to the column it came
+  from (or «برای انجام» when it has no history). The list view collects completed work in a
+  collapsible group. In the Gantt, the task column is `sticky` on the inline-start edge and
+  opaque (`z-20`) so bars (`z-10`) slide beneath it over the grid lines (`z-0`), under a
+  sticky header (`z-30`).
+- **Calendar** — deadlines, meetings, reminders and project milestones only. A day shows at
+  most two badges; the rest fold into «+X مورد دیگر», which opens the day summary. Clicking
+  any day opens the task composer with that Jalali date as the deadline. Deadlines are derived
+  from live tasks, never stored twice.
+- **Notes** — notebooks (شخصی، کاری، ایده‌ها، صورت‌جلسه‌ها), a pinned shelf and colour-tag
+  filters beside a Markdown editor with live checklists. «تبدیل یادداشت به وظیفه» opens the
+  composer pre-filled; open checklist items become subtasks and the note links to the task.
+- **Notification centre** — a drawer from the rail bell with همه / خوانده‌نشده / اشاره‌ها
+  tabs, actor avatars, relative Jalali times, per-item and bulk mark-as-read; a card opens its
+  task or conversation.
+- **Account** — the profile menu opens «پروفایل من» (presence and status line), «امنیت و
+  ورود» (password change with strength meter, SMS two-step sign-in, active sessions) and a
+  sign-out confirmation that clears the session state and routes to `/signed-out`.
 
 ### Icons
 
@@ -210,7 +262,8 @@ geometry at 40%) and `bold` (secondary geometry filled, used for active nav stat
 All domain unions are closed and exhaustively switched with a `const exhaustive: never`
 guard, so adding a member surfaces as a compile error rather than a runtime fallthrough:
 `RoleId`, `PermissionModuleId`, `PermissionActionId`, `TaskStatus`, `TaskPriority`,
-`MessageBody`, `ThemeMode`, `AccentId`, `SmartViewId`, `ChatFilterId`.
+`MessageBody`, `ThemeMode`, `AccentId`, `SmartViewId`, `ChatFilterId`, `NotificationEvent`,
+`NotificationFilterId`, `CalendarEventKind`, `NotebookId`, `TagTone`, `Overlay`.
 
 ---
 
@@ -248,8 +301,9 @@ the inline-end (right) edge, 300px contextual sidebar, fluid workspace, and a 38
 collapsible inspector. Kanban columns share the available width and only scroll once they hit
 their minimum, so all four fit at 1440px with the inspector closed.
 
-**Mobile (375–414px)** — top app bar, five fixed bottom tabs (میز کار · گفتگوها · وظایف من ·
-تقویم · بیشتر) and per-route adaptation: the chat list pushes to a detail view, and the task
+**Mobile (375–414px)** — top app bar (quick create, search, notifications), five fixed bottom
+tabs (میز کار · گفتگوها · وظایف من · تقویم · بیشتر — notes and account actions live under
+بیشتر) and per-route adaptation: the chat list pushes to a detail view, and the task
 list becomes a swipeable single column with the contextual sidebar behind a فیلترها toggle.
 Swipe right completes a task, swipe left opens postpone/reassign. Long-pressing a chat bubble
 opens a sheet whose primary action is «تبدیل مستقیم به وظیفه», pre-filling the composer with
@@ -272,6 +326,8 @@ no backend. Two consequences worth stating plainly:
   repository. `AvatarTone` selects from the neutral and status ramps rather than the brand
   ramp, so members stay distinguishable when the workspace accent changes.
 
-State changes (moving cards, editing permissions, sending messages, creating tasks) are real
-and flow through the reducer; they reset on reload because nothing is persisted except the
-theme.
+State changes (moving cards, adding columns, editing permissions, sending messages, creating
+tasks, events, notes and invitations) are real and flow through the reducer; they reset on
+reload because nothing is persisted except the theme. By the same token the account flows are
+front-end only: the password form validates locally and records the change time, and signing
+out resets the in-memory session — a full reload starts a fresh signed-in session.

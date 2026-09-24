@@ -1,0 +1,38 @@
+'use client';
+
+import { createContext, useContext } from 'react';
+import type { TaskDraft } from '@/types';
+
+/**
+ * Every app-level dialog, as one closed union. Only one is open at a time: each of them is a
+ * modal (or a modal drawer) that owns focus, so stacking two would leave the first one inert
+ * behind the second anyway.
+ */
+export type Overlay =
+  | { readonly kind: 'task-composer'; readonly draft: TaskDraft | null }
+  | { readonly kind: 'conversation-composer' }
+  | { readonly kind: 'event-composer'; readonly date: string | null }
+  | { readonly kind: 'invite-member' }
+  | { readonly kind: 'profile' }
+  | { readonly kind: 'security' }
+  | { readonly kind: 'sign-out' }
+  | { readonly kind: 'global-search' }
+  | { readonly kind: 'notifications' };
+
+export type OverlayKind = Overlay['kind'];
+
+export interface OverlayContextValue {
+  readonly active: Overlay | null;
+  readonly open: (overlay: Overlay) => void;
+  readonly close: () => void;
+  /** Shorthand for the most common entry point. Pass a draft to pre-fill the composer. */
+  readonly openTaskComposer: (draft: TaskDraft | null) => void;
+}
+
+export const OverlayContext = createContext<OverlayContextValue | null>(null);
+
+export function useOverlays(): OverlayContextValue {
+  const context = useContext(OverlayContext);
+  if (!context) throw new Error('useOverlays must be used inside <OverlayProvider>.');
+  return context;
+}

@@ -20,6 +20,7 @@ export interface ChatSidebarProps {
   readonly onSearchChange: (query: string) => void;
   readonly onSelect: (conversationId: string) => void;
   readonly onTogglePin: (conversationId: string) => void;
+  readonly onNewConversation: () => void;
   readonly unreadTotal: number;
 }
 
@@ -36,6 +37,7 @@ export function ChatSidebar({
   onSearchChange,
   onSelect,
   onTogglePin,
+  onNewConversation,
   unreadTotal,
 }: ChatSidebarProps) {
   return (
@@ -43,7 +45,15 @@ export function ChatSidebar({
       <div className="flex flex-col gap-3 border-b border-secondary p-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-title font-bold text-fg-primary">گفتگوها</h2>
-          <IconButton label="گفتگوی جدید" icon={<AddIcon size={18} />} size="sm" variant="subtle" />
+          <IconButton
+            label="گفتگوی جدید"
+            icon={<AddIcon size={18} />}
+            size="sm"
+            variant="subtle"
+            aria-keyshortcuts="M"
+            aria-haspopup="dialog"
+            onClick={onNewConversation}
+          />
         </div>
 
         <Input

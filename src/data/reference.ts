@@ -1,6 +1,9 @@
 import type {
+  BoardColumn,
+  CalendarEventKind,
   ChatFilterId,
   Department,
+  DepartmentId,
   ModuleDescriptor,
   PermissionActionDescriptor,
   PermissionActionId,
@@ -8,7 +11,11 @@ import type {
   PermissionModuleDescriptor,
   RoleDescriptor,
   RoleId,
+  NotebookId,
+  NotificationFilterId,
+  PresenceState,
   SemanticTone,
+  TagTone,
   TaskPriority,
   TaskStatus,
 } from '@/types';
@@ -19,9 +26,26 @@ export const MODULES: readonly ModuleDescriptor[] = [
   { id: 'feed', label: 'میز کار', href: '/feed' },
   { id: 'chats', label: 'گفتگوها', href: '/chats' },
   { id: 'tasks', label: 'پروژه‌ها و وظایف', href: '/tasks' },
-  { id: 'calendar', label: 'تقویم و یادداشت', href: '/calendar' },
+  { id: 'calendar', label: 'تقویم', href: '/calendar' },
+  { id: 'notes', label: 'یادداشت‌ها', href: '/notes' },
   { id: 'directory', label: 'اعضای سازمان', href: '/directory' },
 ];
+
+/* ------------------------------ Presence ------------------------------ */
+
+export const PRESENCE_OPTIONS: ReadonlyArray<{
+  readonly id: PresenceState;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  { id: 'online', label: 'آنلاین', description: 'در دسترس برای گفتگو' },
+  { id: 'busy', label: 'مشغول', description: 'اعلان‌ها بی‌صدا می‌شوند' },
+  { id: 'away', label: 'خارج از دسترس', description: 'به‌زودی برمی‌گردم' },
+  { id: 'offline', label: 'نامرئی', description: 'آفلاین نمایش داده شوید' },
+];
+
+export const departmentName = (id: DepartmentId): string =>
+  DEPARTMENTS.find((entry) => entry.id === id)?.name ?? id;
 
 /* ------------------------------ Departments ------------------------------ */
 
@@ -69,6 +93,79 @@ export const priorityLabel = (priority: TaskPriority): string =>
 
 export const priorityTone = (priority: TaskPriority): SemanticTone =>
   TASK_PRIORITIES.find((entry) => entry.id === priority)?.tone ?? 'todo';
+
+/* ------------------------------ Board ------------------------------ */
+
+/**
+ * The four built-in columns, one per workflow status. Their ids are the status ids, so a
+ * task with `boardColumnId: null` resolves to the column whose id is its status.
+ */
+export const BUILT_IN_COLUMNS: readonly BoardColumn[] = TASK_STATUSES.map((entry) => ({
+  id: entry.id,
+  title: entry.label,
+  status: entry.id,
+  tone: null,
+  custom: false,
+}));
+
+/**
+ * Status a task takes when it is dropped into a user-made column. Custom columns model the
+ * stages between "picked up" and "finished" (QA, blocked, awaiting client…), so their work
+ * counts as in progress for filters, the Gantt palette and the feed's statistics.
+ */
+export const CUSTOM_COLUMN_STATUS: TaskStatus = 'in-progress';
+
+export const TAG_TONES: ReadonlyArray<{ readonly id: TagTone; readonly label: string }> = [
+  { id: 'gray', label: 'خاکستری' },
+  { id: 'blue', label: 'آبی' },
+  { id: 'teal', label: 'سبزآبی' },
+  { id: 'green', label: 'سبز' },
+  { id: 'amber', label: 'کهربایی' },
+  { id: 'red', label: 'قرمز' },
+  { id: 'pink', label: 'صورتی' },
+  { id: 'violet', label: 'بنفش' },
+];
+
+export const tagToneLabel = (tone: TagTone): string =>
+  TAG_TONES.find((entry) => entry.id === tone)?.label ?? tone;
+
+/* ------------------------------ Calendar ------------------------------ */
+
+export const CALENDAR_EVENT_KINDS: ReadonlyArray<{
+  readonly id: CalendarEventKind;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  { id: 'meeting', label: 'جلسه', description: 'زمان‌بندی با شرکت‌کنندگان' },
+  { id: 'reminder', label: 'یادآور', description: 'یک یادآوری برای خودتان' },
+  { id: 'milestone', label: 'نقطه عطف پروژه', description: 'یک موعد کلیدی در پروژه' },
+];
+
+export const calendarEventKindLabel = (kind: CalendarEventKind): string =>
+  CALENDAR_EVENT_KINDS.find((entry) => entry.id === kind)?.label ?? kind;
+
+/* ------------------------------ Notes ------------------------------ */
+
+export const NOTEBOOKS: ReadonlyArray<{ readonly id: NotebookId; readonly label: string }> = [
+  { id: 'personal', label: 'شخصی' },
+  { id: 'work', label: 'کاری' },
+  { id: 'ideas', label: 'ایده‌ها' },
+  { id: 'meetings', label: 'صورت‌جلسه‌ها' },
+];
+
+export const notebookLabel = (notebook: NotebookId): string =>
+  NOTEBOOKS.find((entry) => entry.id === notebook)?.label ?? notebook;
+
+/* ------------------------------ Notifications ------------------------------ */
+
+export const NOTIFICATION_FILTERS: ReadonlyArray<{
+  readonly id: NotificationFilterId;
+  readonly label: string;
+}> = [
+  { id: 'all', label: 'همه' },
+  { id: 'unread', label: 'خوانده‌نشده' },
+  { id: 'mentions', label: 'اشاره‌ها' },
+];
 
 /* ------------------------------ Chat filters ------------------------------ */
 

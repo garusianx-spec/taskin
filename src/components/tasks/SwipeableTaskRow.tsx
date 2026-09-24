@@ -9,11 +9,12 @@ import { priorityLabel, priorityTone } from '@/data/reference';
 import { subtaskProgress, usersByIds } from '@/store/selectors';
 import { AvatarStack, Badge, IconButton } from '@/components/ui';
 import { CalendarIcon, CheckIcon, ClockIcon, MoreVerticalIcon } from '@/components/icons';
+import { TaskCompleteCheckbox, completedTitleClass } from './TaskCompleteCheckbox';
 
 export interface SwipeableTaskRowProps {
   readonly task: Task;
   readonly onOpen: (taskId: string) => void;
-  readonly onComplete: (taskId: string) => void;
+  readonly onToggleComplete: (taskId: string, completed: boolean) => void;
   readonly onPostpone: (task: Task) => void;
 }
 
@@ -26,17 +27,18 @@ const MAX_TRAVEL = 128;
  *
  * The document is RTL, so "swipe right" (positive deltaX) moves toward the start edge and is
  * bound to "انجام شد"; "swipe left" (negative deltaX) is bound to "تعویق و ارجاع". Both
- * actions also exist as ordinary buttons in the row menu, so the gesture is an accelerator
- * rather than the only route — pointer-only interactions never become the sole path.
+ * actions also exist as ordinary controls — the quick-complete checkbox beside the title and
+ * the row menu — so the gesture is an accelerator rather than the only route.
  */
-export function SwipeableTaskRow({ task, onOpen, onComplete, onPostpone }: SwipeableTaskRowProps) {
+export function SwipeableTaskRow({ task, onOpen, onToggleComplete, onPostpone }: SwipeableTaskRowProps) {
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
   const pointerId = useRef<number | null>(null);
 
+  const done = task.status === 'done';
   const progress = subtaskProgress(task);
-  const deadline = describeDeadline(task.dueDate, new Date(), task.status === 'done');
+  const deadline = describeDeadline(task.dueDate, new Date(), done);
   const assignees = usersByIds(task.assigneeIds);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -58,7 +60,7 @@ export function SwipeableTaskRow({ task, onOpen, onComplete, onPostpone }: Swipe
     pointerId.current = null;
 
     if (offset >= COMMIT_THRESHOLD) {
-      onComplete(task.id);
+      onToggleComplete(task.id, true);
     } else if (offset <= -COMMIT_THRESHOLD) {
       onPostpone(task);
     }
@@ -108,6 +110,11 @@ export function SwipeableTaskRow({ task, onOpen, onComplete, onPostpone }: Swipe
           !dragging && 'transition-transform duration-200',
         )}
       >
+        <TaskCompleteCheckbox
+          task={task}
+          onToggle={(completed) => onToggleComplete(task.id, completed)}
+          className="mt-8"
+        />
         <button
           type="button"
           onClick={() => onOpen(task.id)}
@@ -122,8 +129,8 @@ export function SwipeableTaskRow({ task, onOpen, onComplete, onPostpone }: Swipe
 
           <span
             className={cn(
-              'line-clamp-2 text-body-sm font-semibold leading-6',
-              task.status === 'done' ? 'text-fg-tertiary line-through' : 'text-fg-primary',
+              'line-clamp-2 text-body-sm font-semibold leading-6 transition-[color,opacity]',
+              done ? completedTitleClass : 'text-fg-primary',
             )}
           >
             {task.title}
@@ -142,22 +149,13 @@ export function SwipeableTaskRow({ task, onOpen, onComplete, onPostpone }: Swipe
           </span>
         </button>
 
-        {/* Keyboard/AT path for the same two actions. */}
-        <span className="flex flex-col gap-1">
-          <IconButton
-            label={`علامت‌گذاری «${task.title}» به‌عنوان انجام‌شده`}
-            icon={<CheckIcon size={16} />}
-            size="xs"
-            variant="subtle"
-            onClick={() => onComplete(task.id)}
-          />
-          <IconButton
-            label={`تعویق یا ارجاع «${task.title}»`}
-            icon={<MoreVerticalIcon size={16} />}
-            size="xs"
-            onClick={() => onPostpone(task)}
-          />
-        </span>
+        {/* Keyboard/AT path for the swipe-left action (the checkbox covers swipe-right). */}
+        <IconButton
+          label={`تعویق یا ارجاع «${task.title}»`}
+          icon={<MoreVerticalIcon size={16} />}
+          size="xs"
+          onClick={() => onPostpone(task)}
+        />
       </div>
     </li>
   );

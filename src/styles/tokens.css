@@ -3,10 +3,21 @@
  * ------------------
  * Layer 1  Primitive ramps   — raw channel triplets (`R G B`, so Tailwind's `<alpha-value>`
  *                              slot works: `rgb(var(--gray-500) / 0.4)`).
- * Layer 2  Accent alias      — `--brand-50…900` re-points at one of four accent ramps via
- *                              `[data-accent]`. Components never name an accent.
+ * Layer 2  Accent alias      — `--brand-50…900` re-points at one of six accent ramps via
+ *                              `[data-accent]`, together with three accessible anchors:
+ *                                --brand-solid        fill that carries white text
+ *                                --brand-solid-hover  its hover/pressed step
+ *                                --brand-ink          brand text on light surfaces
+ *                              They default to 600 / 700 / 600 and move one step darker on
+ *                              any palette whose 600 misses 4.5:1 against white or its own
+ *                              hover tint (Teal ink, Ocean ink and fill), so each palette
+ *                              keeps its identity colour for rings, borders and swatches
+ *                              while text stays WCAG AA. Components never name an accent.
  * Layer 3  Semantic surface  — `--bg-*`, `--fg-*`, `--border-*`, `--status-*`. These flip in
  *                              dark mode; every component reads only this layer.
+ *
+ * `scripts/check-contrast.mjs` parses this file and asserts every text/fill pair for all
+ * six palettes in both modes.
  *
  * Mode is driven by `data-theme="light" | "dark"` on <html>. "System" resolves to one of the
  * two at runtime (see ThemeProvider) so there is a single source of truth in the DOM.
@@ -52,6 +63,42 @@
   --error-700: 180 35 24;     /* #B42318 — Urgent / Blocked */
   --error-900: 122 39 26;     /* #7A271A */
 
+  /* ---------- Layer 1: tag tones (custom columns, note colour tags) ----------
+     A fixed set that never follows the workspace accent, so a "red" column stays red
+     under every palette. `-bg`/`-fg`/`-border` form a badge that clears WCAG AA. */
+  --tag-gray: 102 112 133;       /* #667085 */
+  --tag-gray-bg: 242 244 247;    /* #F2F4F7 */
+  --tag-gray-fg: 52 64 84;       /* #344054 */
+  --tag-gray-border: 208 213 221;
+  --tag-blue: 46 144 250;        /* #2E90FA */
+  --tag-blue-bg: 239 248 255;    /* #EFF8FF */
+  --tag-blue-fg: 23 92 211;      /* #175CD3 */
+  --tag-blue-border: 178 221 255;
+  --tag-teal: 21 183 158;        /* #15B79E */
+  --tag-teal-bg: 240 253 249;    /* #F0FDF9 */
+  --tag-teal-fg: 16 117 105;     /* #107569 */
+  --tag-teal-border: 153 246 224;
+  --tag-green: 18 183 106;       /* #12B76A */
+  --tag-green-bg: 236 253 243;   /* #ECFDF3 */
+  --tag-green-fg: 2 122 72;      /* #027A48 */
+  --tag-green-border: 166 244 197;
+  --tag-amber: 247 144 9;        /* #F79009 */
+  --tag-amber-bg: 255 250 235;   /* #FFFAEB */
+  --tag-amber-fg: 181 71 8;      /* #B54708 */
+  --tag-amber-border: 254 223 137;
+  --tag-red: 240 68 56;          /* #F04438 */
+  --tag-red-bg: 254 243 242;     /* #FEF3F2 */
+  --tag-red-fg: 180 35 24;       /* #B42318 */
+  --tag-red-border: 254 205 202;
+  --tag-pink: 238 70 188;        /* #EE46BC */
+  --tag-pink-bg: 253 242 250;    /* #FDF2FA */
+  --tag-pink-fg: 193 21 116;     /* #C11574 */
+  --tag-pink-border: 252 206 238;
+  --tag-violet: 122 90 248;      /* #7A5AF8 */
+  --tag-violet-bg: 244 243 255;  /* #F4F3FF */
+  --tag-violet-fg: 89 37 220;    /* #5925DC */
+  --tag-violet-border: 217 214 254;
+
   /* ---------- Layer 3: semantic surfaces (light mode default) ---------- */
   --bg-canvas: var(--gray-50);
   --bg-surface: 255 255 255;
@@ -63,7 +110,9 @@
   --bg-disabled: var(--gray-100);
   --bg-overlay: 12 17 29;
   --bg-brand-subtle: var(--brand-50);
-  --bg-brand-solid: var(--brand-600);
+  --bg-brand-subtle-hover: var(--brand-100);
+  --bg-brand-solid: var(--brand-solid);
+  --bg-brand-solid-hover: var(--brand-solid-hover);
 
   --fg-primary: var(--gray-900);
   --fg-secondary: var(--gray-700);
@@ -72,7 +121,7 @@
   --fg-placeholder: var(--gray-400);
   --fg-disabled: var(--gray-400);
   --fg-on-brand: 255 255 255;
-  --fg-brand: var(--brand-600);
+  --fg-brand: var(--brand-ink);
 
   --border-primary: var(--gray-300);
   --border-secondary: var(--gray-200);
@@ -80,7 +129,7 @@
   --border-brand: var(--brand-600);
   --border-disabled: var(--gray-200);
 
-  --ring-brand: var(--brand-500);
+  --ring-brand: var(--brand-ring);
   --ring-error: var(--error-500);
 
   --status-done: var(--success-700);
@@ -95,7 +144,7 @@
   --status-todo: var(--gray-500);
   --status-todo-bg: var(--gray-50);
   --status-todo-border: var(--gray-200);
-  --status-review: var(--brand-600);
+  --status-review: var(--brand-ink);
   --status-review-bg: var(--brand-50);
   --status-review-border: var(--brand-200);
 
@@ -132,7 +181,9 @@
   --bg-disabled: 31 36 47;
   --bg-overlay: 0 0 0;
   --bg-brand-subtle: var(--brand-900);
-  --bg-brand-solid: var(--brand-600);
+  --bg-brand-subtle-hover: var(--brand-800);
+  --bg-brand-solid: var(--brand-solid);
+  --bg-brand-solid-hover: var(--brand-solid-hover);
 
   --fg-primary: 247 248 250;
   --fg-secondary: var(--gray-300);
@@ -146,7 +197,9 @@
   --border-primary: 51 55 65;   /* #333741 */
   --border-secondary: 31 36 47; /* #1F242F */
   --border-tertiary: 31 36 47;
-  --border-brand: var(--brand-500);
+  /* 400, not 500: every palette's 400 clears 3:1 against the charcoal surface, so selected
+     and hovered card borders read identically under all six accents. */
+  --border-brand: var(--brand-400);
   --border-disabled: var(--gray-700);
 
   --ring-brand: var(--brand-400);
@@ -168,6 +221,34 @@
   --status-review-bg: var(--brand-900);
   --status-review-border: var(--brand-800);
 
+  /* Tag tones: solid dots keep their hue; badge fills drop to the 950 step and text lifts
+     to 300 so they read on charcoal. */
+  --tag-gray: 133 136 142;
+  --tag-gray-bg: 31 36 47;
+  --tag-gray-fg: 206 207 210;
+  --tag-gray-border: 51 55 65;
+  --tag-blue-bg: 16 42 86;
+  --tag-blue-fg: 132 202 255;
+  --tag-blue-border: 25 65 133;
+  --tag-teal-bg: 10 41 38;
+  --tag-teal-fg: 95 233 208;
+  --tag-teal-border: 19 78 72;
+  --tag-green-bg: 5 51 33;
+  --tag-green-fg: 108 233 166;
+  --tag-green-border: 5 79 49;
+  --tag-amber-bg: 78 29 9;
+  --tag-amber-fg: 253 176 34;
+  --tag-amber-border: 122 46 14;
+  --tag-red-bg: 85 22 12;
+  --tag-red-fg: 253 162 155;
+  --tag-red-border: 122 39 26;
+  --tag-pink-bg: 78 13 48;
+  --tag-pink-fg: 250 167 224;
+  --tag-pink-border: 133 22 81;
+  --tag-violet-bg: 39 17 95;
+  --tag-violet-fg: 189 180 254;
+  --tag-violet-border: 73 28 150;
+
   --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
   --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.4);
   --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
@@ -177,7 +258,15 @@
 
 /* ================= Layer 2: swappable accent ramps ================= */
 
-/* 1. Classic Brand — Indigo. Primary 600 = #3538CD */
+/* Accessible anchors, shared by every palette unless it overrides them below. */
+[data-accent] {
+  --brand-solid: var(--brand-600);
+  --brand-solid-hover: var(--brand-700);
+  --brand-ink: var(--brand-600);
+  --brand-ring: var(--brand-500);
+}
+
+/* 1. Corporate default — Indigo. Primary 600 = #3538CD */
 [data-accent='indigo'] {
   --brand-25: 245 248 255;  /* #F5F8FF */
   --brand-50: 238 244 255;  /* #EEF4FF */
@@ -192,7 +281,7 @@
   --brand-900: 31 33 99;    /* #1F2163 */
 }
 
-/* 2. Focus & Clarity — Deep Teal. Primary 600 = #0E766E */
+/* 2. Deep Focus — Teal. Primary 600 = #0E766E */
 [data-accent='teal'] {
   --brand-25: 242 251 250;  /* #F2FBFA */
   --brand-50: 230 247 245;  /* #E6F7F5 */
@@ -205,34 +294,74 @@
   --brand-700: 11 92 86;    /* #0B5C56 */
   --brand-800: 9 72 67;     /* #094843 */
   --brand-900: 6 55 51;     /* #063733 */
+  /* 600 on the 100 hover tint is 4.46:1 — brand text steps down to 700. */
+  --brand-ink: var(--brand-700);
 }
 
 /* 3. Modern Startup — Electric Violet (Untitled UI signature). Primary 600 = #6941C6 */
 [data-accent='violet'] {
-  --brand-25: 252 250 255; /* #FCFAFF */
-  --brand-50: 249 245 255; /* #F9F5FF */
-  --brand-100: 244 235 255;/* #F4EBFF */
-  --brand-200: 233 215 254;/* #E9D7FE */
-  --brand-300: 214 187 251;/* #D6BBFB */
-  --brand-400: 182 146 246;/* #B692F6 */
-  --brand-500: 158 119 237;/* #9E77ED */
-  --brand-600: 105 65 198; /* #6941C6 */
-  --brand-700: 83 56 158;  /* #53389E */
-  --brand-800: 66 48 125;  /* #42307D */
-  --brand-900: 47 35 98;   /* #2F2362 */
+  --brand-25: 252 250 255;  /* #FCFAFF */
+  --brand-50: 249 245 255;  /* #F9F5FF */
+  --brand-100: 244 235 255; /* #F4EBFF */
+  --brand-200: 233 215 254; /* #E9D7FE */
+  --brand-300: 214 187 251; /* #D6BBFB */
+  --brand-400: 182 146 246; /* #B692F6 */
+  --brand-500: 158 119 237; /* #9E77ED */
+  --brand-600: 105 65 198;  /* #6941C6 */
+  --brand-700: 83 56 158;   /* #53389E */
+  --brand-800: 66 48 125;   /* #42307D */
+  --brand-900: 47 35 98;    /* #2F2362 */
 }
 
-/* 4. Enterprise Warm — Amber / Slate. Primary 600 = #B54708 */
+/* 4. Rose / Burgundy. Primary 600 = #9E165F */
+[data-accent='rose'] {
+  --brand-25: 254 246 251;  /* #FEF6FB */
+  --brand-50: 253 242 250;  /* #FDF2FA */
+  --brand-100: 252 231 246; /* #FCE7F6 */
+  --brand-200: 252 206 238; /* #FCCEEE */
+  --brand-300: 250 167 224; /* #FAA7E0 */
+  --brand-400: 246 112 199; /* #F670C7 */
+  --brand-500: 193 21 116;  /* #C11574 */
+  --brand-600: 158 22 95;   /* #9E165F */
+  --brand-700: 133 22 81;   /* #851651 */
+  --brand-800: 107 17 66;   /* #6B1142 */
+  --brand-900: 78 13 48;    /* #4E0D30 */
+}
+
+/* 5. Enterprise Warmth — Amber. Primary 600 = #B54708 */
 [data-accent='amber'] {
-  --brand-25: 255 252 245; /* #FFFCF5 */
-  --brand-50: 255 250 235; /* #FFFAEB */
-  --brand-100: 254 240 199;/* #FEF0C7 */
-  --brand-200: 254 223 137;/* #FEDF89 */
-  --brand-300: 254 200 75; /* #FEC84B */
-  --brand-400: 253 176 34; /* #FDB022 */
-  --brand-500: 247 144 9;  /* #F79009 */
-  --brand-600: 181 71 8;   /* #B54708 */
-  --brand-700: 147 55 13;  /* #93370D */
-  --brand-800: 122 46 14;  /* #7A2E0E */
-  --brand-900: 78 29 9;    /* #4E1D09 */
+  --brand-25: 255 252 245;  /* #FFFCF5 */
+  --brand-50: 255 250 235;  /* #FFFAEB */
+  --brand-100: 254 240 199; /* #FEF0C7 */
+  --brand-200: 254 223 137; /* #FEDF89 */
+  --brand-300: 254 200 75;  /* #FEC84B */
+  --brand-400: 253 176 34;  /* #FDB022 */
+  --brand-500: 247 144 9;   /* #F79009 */
+  --brand-600: 181 71 8;    /* #B54708 */
+  --brand-700: 147 55 13;   /* #93370D */
+  --brand-800: 122 46 14;   /* #7A2E0E */
+  --brand-900: 78 29 9;     /* #4E1D09 */
+  /* Amber 500 is too light for a focus ring on white (2.2:1); ring on 600 instead. */
+  --brand-ring: var(--brand-600);
+}
+
+/* 6. Deep Ocean — Cyan. Primary 600 = #088AB2 */
+[data-accent='ocean'] {
+  --brand-25: 245 254 255;  /* #F5FEFF */
+  --brand-50: 236 253 255;  /* #ECFDFF */
+  --brand-100: 207 249 254; /* #CFF9FE */
+  --brand-200: 165 240 252; /* #A5F0FC */
+  --brand-300: 103 227 249; /* #67E3F9 */
+  --brand-400: 34 204 238;  /* #22CCEE */
+  --brand-500: 6 174 212;   /* #06AED4 */
+  --brand-600: 8 138 178;   /* #088AB2 */
+  --brand-700: 14 112 144;  /* #0E7090 */
+  --brand-800: 21 91 117;   /* #155B75 */
+  --brand-900: 22 76 99;    /* #164C63 */
+  /* #088AB2 is 3.9:1 against white — enough for rings and borders, not for text. Filled
+     buttons and brand text step down to 700 (5.6:1); the 600 identity stays everywhere else. */
+  --brand-solid: var(--brand-700);
+  --brand-solid-hover: var(--brand-800);
+  --brand-ink: var(--brand-700);
+  --brand-ring: var(--brand-600);
 }

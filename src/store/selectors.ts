@@ -1,14 +1,21 @@
 import type {
+  AppNotification,
+  BoardColumn,
+  CalendarEvent,
   ChatFilterId,
   Conversation,
   Message,
+  Note,
+  NotebookId,
+  NotificationFilterId,
   Project,
   SmartViewId,
+  TagTone,
   Task,
   TaskStatus,
   User,
 } from '@/types';
-import { CONVERSATIONS, PROJECTS, USERS } from '@/data/workspace';
+import { PROJECTS, USERS } from '@/data/workspace';
 import { daysBetween, parseISODate, toISODate } from '@/lib/jalali';
 
 /* ------------------------------ People & projects ------------------------------ */
@@ -21,8 +28,10 @@ export const usersByIds = (ids: readonly string[]): User[] =>
 export const projectById = (id: string): Project | undefined =>
   PROJECTS.find((project) => project.id === id);
 
-export const conversationById = (id: string): Conversation | undefined =>
-  CONVERSATIONS.find((conversation) => conversation.id === id);
+export const conversationById = (
+  conversations: readonly Conversation[],
+  id: string,
+): Conversation | undefined => conversations.find((conversation) => conversation.id === id);
 
 /** Root projects with their children attached, for the sidebar tree. */
 export interface ProjectNode {
@@ -100,6 +109,115 @@ export const subtaskProgress = (task: Task): { readonly done: number; readonly t
 
 export const isOverdue = (task: Task, now: Date = new Date()): boolean =>
   task.status !== 'done' && daysBetween(now, parseISODate(task.dueDate)) < 0;
+
+/* ------------------------------ Board ------------------------------ */
+
+/** The column a card renders in: its custom column if it has one, else its status column. */
+export function columnForTask(columns: readonly BoardColumn[], task: Task): BoardColumn | undefined {
+  if (task.boardColumnId !== null) {
+    const custom = columns.find((column) => column.id === task.boardColumnId);
+    if (custom) return custom;
+  }
+  return columns.find((column) => !column.custom && column.status === task.status);
+}
+
+export const tasksInColumn = (tasks: readonly Task[], column: BoardColumn): readonly Task[] =>
+  column.custom
+    ? tasks.filter((task) => task.boardColumnId === column.id)
+    : tasks.filter((task) => task.boardColumnId === null && task.status === column.status);
+
+/* ------------------------------ Calendar ------------------------------ */
+
+/**
+ * One row on the calendar. Deadlines are derived from tasks rather than stored, so a task
+ * that is rescheduled or completed moves its badge without a second write.
+ */
+export type CalendarItem =
+  | { readonly kind: 'deadline'; readonly id: string; readonly date: string; readonly task: Task }
+  | { readonly kind: 'event'; readonly id: string; readonly date: string; readonly event: CalendarEvent };
+
+/** Milestones first, then open deadlines, then timed events by start time, then the rest. */
+function calendarRank(item: CalendarItem): string {
+  if (item.kind === 'deadline') return item.task.status === 'done' ? '3' : '1';
+  if (item.event.kind === 'milestone') return '0';
+  return `2${item.event.startTime ?? '99:99'}`;
+}
+
+export function calendarItemsByDate(
+  tasks: readonly Task[],
+  events: readonly CalendarEvent[],
+): ReadonlyMap<string, readonly CalendarItem[]> {
+  const map = new Map<string, CalendarItem[]>();
+  const push = (item: CalendarItem) => {
+    const list = map.get(item.date);
+    if (list) list.push(item);
+    else map.set(item.date, [item]);
+  };
+
+  // `dueDate` is already a local `YYYY-MM-DD`; keying on it directly avoids the UTC shift a
+  // Date round-trip would introduce west of Greenwich.
+  for (const task of tasks) {
+    push({ kind: 'deadline', id: `deadline-${task.id}`, date: task.dueDate.slice(0, 10), task });
+  }
+  for (const event of events) {
+    push({ kind: 'event', id: event.id, date: event.date, event });
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => calendarRank(a).localeCompare(calendarRank(b)));
+  }
+  return map;
+}
+
+/* ------------------------------ Notifications ------------------------------ */
+
+export const isMentionNotification = (notification: AppNotification): boolean =>
+  notification.event.kind === 'mention' || notification.event.kind === 'reply';
+
+export function filterNotifications(
+  notifications: readonly AppNotification[],
+  filter: NotificationFilterId,
+): readonly AppNotification[] {
+  const sorted = notifications
+    .slice()
+    .sort((a, b) => parseISODate(b.createdAt).getTime() - parseISODate(a.createdAt).getTime());
+  switch (filter) {
+    case 'all':
+      return sorted;
+    case 'unread':
+      return sorted.filter((notification) => !notification.read);
+    case 'mentions':
+      return sorted.filter(isMentionNotification);
+    default: {
+      const exhaustive: never = filter;
+      return exhaustive;
+    }
+  }
+}
+
+/* ------------------------------ Notes ------------------------------ */
+
+export interface NoteFilter {
+  readonly notebook: NotebookId | 'all';
+  readonly color: TagTone | null;
+  readonly search: string;
+}
+
+/** Pinned first, then most recently edited. */
+export function filterNotes(notes: readonly Note[], filter: NoteFilter): readonly Note[] {
+  const query = filter.search.trim().toLowerCase();
+  return notes
+    .filter((note) => {
+      if (filter.notebook !== 'all' && note.notebook !== filter.notebook) return false;
+      if (filter.color && !note.colors.includes(filter.color)) return false;
+      if (!query) return true;
+      return `${note.title} ${note.body}`.toLowerCase().includes(query);
+    })
+    .slice()
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return parseISODate(b.updatedAt).getTime() - parseISODate(a.updatedAt).getTime();
+    });
+}
 
 /* ------------------------------ Conversations ------------------------------ */
 

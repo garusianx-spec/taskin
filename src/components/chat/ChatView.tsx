@@ -14,6 +14,7 @@ import {
   userById,
   usersByIds,
 } from '@/store/selectors';
+import { taskDraft } from '@/store/drafts';
 import { AvatarStack, Badge, EmptyState, IconButton, Input, Tooltip } from '@/components/ui';
 import { MessageBubble } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
@@ -89,20 +90,18 @@ export function ChatView({
       }
     : null;
 
-  const buildDraft = (message: Message): TaskDraft => ({
-    title: truncate(messagePreview(message), 70),
-    description:
-      message.body.kind === 'text'
-        ? message.body.text
-        : `برگرفته از ${messagePreview(message)} در گفتگوی «${conversation.title}»`,
-    projectId: defaultProjectId,
-    status: 'todo',
-    priority: 'medium',
-    assigneeIds: [currentUserId],
-    dueDate: null,
-    sourceMessageId: message.id,
-    attachments: message.body.kind === 'file' ? [message.body.attachment] : [],
-  });
+  const buildDraft = (message: Message): TaskDraft =>
+    taskDraft({
+      title: truncate(messagePreview(message), 70),
+      description:
+        message.body.kind === 'text'
+          ? message.body.text
+          : `برگرفته از ${messagePreview(message)} در گفتگوی «${conversation.title}»`,
+      projectId: defaultProjectId,
+      assigneeIds: [currentUserId],
+      sourceMessageId: message.id,
+      attachments: message.body.kind === 'file' ? [message.body.attachment] : [],
+    });
 
   const attachmentCount = thread.filter((message) => message.body.kind === 'file').length;
 

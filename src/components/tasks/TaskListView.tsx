@@ -1,20 +1,25 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { Task, TaskStatus } from '@/types';
+import type { BoardColumn, Task, TaskStatus } from '@/types';
 import { cn } from '@/lib/cn';
 import { describeDeadline, formatJalali } from '@/lib/jalali';
 import { formatCount, formatFraction } from '@/lib/format';
-import { priorityLabel, priorityTone, statusLabel, statusTone } from '@/data/reference';
-import { projectById, subtaskProgress, usersByIds } from '@/store/selectors';
+import { priorityLabel, priorityTone, statusTone } from '@/data/reference';
+import { columnForTask, projectById, subtaskProgress, usersByIds } from '@/store/selectors';
 import { AvatarStack, Badge, EmptyState } from '@/components/ui';
-import { ChevronDownIcon, FlagIcon, StarFilledIcon, TaskSquareIcon } from '@/components/icons';
+import { CheckCircleIcon, ChevronDownIcon, FlagIcon, StarFilledIcon, TaskSquareIcon } from '@/components/icons';
+import { TaskCompleteCheckbox, completedTitleClass } from './TaskCompleteCheckbox';
 
 export interface TaskListViewProps {
   readonly tasks: readonly Task[];
+  readonly columns: readonly BoardColumn[];
   readonly onOpenTask: (taskId: string) => void;
+  readonly onToggleComplete: (taskId: string, completed: boolean) => void;
   readonly selectedTaskId: string | null;
 }
+
+const COLUMN_COUNT = 6;
 
 type SortKey = 'due' | 'priority' | 'title' | 'status';
 
@@ -34,11 +39,14 @@ const STATUS_RANK: Readonly<Record<TaskStatus, number>> = {
 
 /**
  * Untitled UI data table. Column headers are sort buttons carrying `aria-sort`, and the row
- * itself is the activator so the whole line is one keyboard target.
+ * itself is the activator so the whole line is one keyboard target. Completed work collects
+ * in its own collapsible row group under the open tasks, so ticking a checkbox visibly moves
+ * the task into "انجام‌شده".
  */
-export function TaskListView({ tasks, onOpenTask, selectedTaskId }: TaskListViewProps) {
+export function TaskListView({ tasks, columns, onOpenTask, onToggleComplete, selectedTaskId }: TaskListViewProps) {
   const [sortKey, setSortKey] = useState<SortKey>('due');
   const [ascending, setAscending] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(true);
 
   const sorted = useMemo(() => {
     const direction = ascending ? 1 : -1;
@@ -59,6 +67,9 @@ export function TaskListView({ tasks, onOpenTask, selectedTaskId }: TaskListView
       }
     });
   }, [tasks, sortKey, ascending]);
+
+  const openTasks = sorted.filter((task) => task.status !== 'done');
+  const completedTasks = sorted.filter((task) => task.status === 'done');
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -104,79 +115,59 @@ export function TaskListView({ tasks, onOpenTask, selectedTaskId }: TaskListView
             </tr>
           </thead>
           <tbody>
-            {sorted.map((task) => {
-              const progress = subtaskProgress(task);
-              const deadline = describeDeadline(task.dueDate, new Date(), task.status === 'done');
-              const project = projectById(task.projectId);
-              const assignees = usersByIds(task.assigneeIds);
-
-              return (
-                <tr
-                  key={task.id}
-                  tabIndex={0}
-                  onClick={() => onOpenTask(task.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onOpenTask(task.id);
-                    }
-                  }}
-                  className={cn(
-                    'cursor-pointer border-t border-secondary transition-colors hover:bg-hover',
-                    selectedTaskId === task.id && 'bg-brand-subtle',
-                  )}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-start gap-2">
-                      {task.starred && <StarFilledIcon size={14} className="mt-1 shrink-0 text-status-progress" label="ستاره‌دار" />}
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-body-sm font-semibold text-fg-primary">{task.title}</span>
-                        <span className="numeric truncate text-micro text-fg-tertiary">
-                          {`${task.code}، ${project?.name ?? ''}`}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone={statusTone(task.status)} size="md" dot>
-                      {statusLabel(task.status)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone={priorityTone(task.priority)} size="md" iconStart={<FlagIcon size={12} />}>
-                      {priorityLabel(task.priority)}
-                    </Badge>
-                  </td>
-                  <td className="numeric px-4 py-3">
-                    <div className="flex flex-col">
-                      <span className="text-body-sm text-fg-primary">{formatJalali(task.dueDate, 'medium')}</span>
-                      {/*
-                        `describeDeadline` falls back to the plain date for completed and
-                        far-off work, which would just repeat the line above. Only the
-                        urgent/near tones say something the absolute date does not.
-                      */}
-                      {(deadline.tone === 'blocked' || deadline.tone === 'progress') && (
-                        <span
-                          className={cn(
-                            'text-micro font-medium',
-                            deadline.tone === 'blocked' ? 'text-status-blocked' : 'text-status-progress',
-                          )}
-                        >
-                          {deadline.text}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="numeric px-4 py-3 text-body-sm text-fg-secondary">
-                    {progress.total > 0 ? formatFraction(progress.done, progress.total) : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {assignees.length > 0 ? <AvatarStack members={assignees} max={3} size="sm" /> : '—'}
-                  </td>
-                </tr>
-              );
-            })}
+            {openTasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                columns={columns}
+                selected={selectedTaskId === task.id}
+                onOpen={onOpenTask}
+                onToggleComplete={onToggleComplete}
+              />
+            ))}
+            {openTasks.length === 0 && (
+              <tr className="border-t border-secondary">
+                <td colSpan={COLUMN_COUNT} className="px-4 py-6 text-center text-body-sm text-fg-tertiary">
+                  همه وظایف این نما انجام شده‌اند.
+                </td>
+              </tr>
+            )}
           </tbody>
+          {completedTasks.length > 0 && (
+            <tbody>
+              <tr className="border-t border-secondary bg-sunken/60">
+                <th scope="rowgroup" colSpan={COLUMN_COUNT} className="px-4 py-2 text-start">
+                  <button
+                    type="button"
+                    aria-expanded={showCompleted}
+                    onClick={() => setShowCompleted((value) => !value)}
+                    className="inline-flex items-center gap-2 text-caption font-semibold text-fg-secondary transition-colors hover:text-fg-primary"
+                  >
+                    <ChevronDownIcon
+                      size={14}
+                      className={cn('transition-transform', !showCompleted && 'rotate-90 rtl:-rotate-90')}
+                    />
+                    <CheckCircleIcon size={16} className="text-status-done" />
+                    انجام‌شده
+                    <Badge tone="done" size="sm" numeric>
+                      {formatCount(completedTasks.length)}
+                    </Badge>
+                  </button>
+                </th>
+              </tr>
+              {showCompleted &&
+                completedTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    columns={columns}
+                    selected={selectedTaskId === task.id}
+                    onOpen={onOpenTask}
+                    onToggleComplete={onToggleComplete}
+                  />
+                ))}
+            </tbody>
+          )}
         </table>
       </div>
 
@@ -186,6 +177,101 @@ export function TaskListView({ tasks, onOpenTask, selectedTaskId }: TaskListView
         )} مورد انجام‌شده`}
       </p>
     </div>
+  );
+}
+
+interface TaskRowProps {
+  readonly task: Task;
+  readonly columns: readonly BoardColumn[];
+  readonly selected: boolean;
+  readonly onOpen: (taskId: string) => void;
+  readonly onToggleComplete: (taskId: string, completed: boolean) => void;
+}
+
+function TaskRow({ task, columns, selected, onOpen, onToggleComplete }: TaskRowProps) {
+  const done = task.status === 'done';
+  const progress = subtaskProgress(task);
+  const deadline = describeDeadline(task.dueDate, new Date(), done);
+  const project = projectById(task.projectId);
+  const assignees = usersByIds(task.assigneeIds);
+  const column = columnForTask(columns, task);
+
+  return (
+    <tr
+      tabIndex={0}
+      onClick={() => onOpen(task.id)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen(task.id);
+        }
+      }}
+      className={cn(
+        'cursor-pointer border-t border-secondary transition-colors hover:bg-hover',
+        selected && 'bg-brand-subtle',
+      )}
+    >
+      <td className="px-4 py-3">
+        <div className="flex items-start gap-2.5">
+          <TaskCompleteCheckbox
+            task={task}
+            onToggle={(completed) => onToggleComplete(task.id, completed)}
+            className="mt-0.5"
+          />
+          {task.starred && <StarFilledIcon size={14} className="mt-1 shrink-0 text-status-progress" label="ستاره‌دار" />}
+          <div className="flex min-w-0 flex-col">
+            <span
+              className={cn(
+                'truncate text-body-sm font-semibold transition-[color,opacity]',
+                done ? completedTitleClass : 'text-fg-primary',
+              )}
+            >
+              {task.title}
+            </span>
+            <span className="numeric truncate text-micro text-fg-tertiary">
+              {`${task.code}، ${project?.name ?? ''}`}
+            </span>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <Badge tone={statusTone(task.status)} size="md" dot>
+          {column?.title ?? task.status}
+        </Badge>
+      </td>
+      <td className="px-4 py-3">
+        <Badge tone={priorityTone(task.priority)} size="md" iconStart={<FlagIcon size={12} />}>
+          {priorityLabel(task.priority)}
+        </Badge>
+      </td>
+      <td className="numeric px-4 py-3">
+        <div className="flex flex-col">
+          <span className="text-body-sm text-fg-primary">{formatJalali(task.dueDate, 'medium')}</span>
+          {/*
+            `describeDeadline` falls back to the plain date for completed and
+            far-off work, which would just repeat the line above. Only the
+            urgent/near tones say something the absolute date does not.
+          */}
+          {(deadline.tone === 'blocked' || deadline.tone === 'progress') && (
+            <span
+              className={cn(
+                'text-micro font-medium',
+                deadline.tone === 'blocked' ? 'text-status-blocked' : 'text-status-progress',
+              )}
+            >
+              {deadline.text}
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="numeric px-4 py-3 text-body-sm text-fg-secondary">
+        {progress.total > 0 ? formatFraction(progress.done, progress.total) : '—'}
+      </td>
+      <td className="px-4 py-3">
+        {assignees.length > 0 ? <AvatarStack members={assignees} max={3} size="sm" /> : '—'}
+      </td>
+    </tr>
   );
 }
 

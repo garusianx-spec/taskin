@@ -10,6 +10,7 @@ export { Popover, PopoverSection, PopoverDivider, type PopoverProps } from './Po
 export { MenuItem, MenuList, type MenuItemProps } from './Menu';
 export { Modal, type ModalProps, type ModalSize } from './Modal';
 export { Drawer, type DrawerProps } from './Drawer';
+export { SlideOver, type SlideOverProps } from './SlideOver';
 export { BottomSheet, type BottomSheetProps } from './BottomSheet';
 export { Select, type SelectOption, type SelectProps } from './Select';
 export { ProgressBar, type ProgressBarProps } from './Progress';

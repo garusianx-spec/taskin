@@ -13,6 +13,8 @@ export interface CheckboxProps {
   readonly ariaLabel?: string;
   readonly disabled?: boolean;
   readonly size?: 'sm' | 'md';
+  /** `success` paints the checked box green — used where checking means "completed". */
+  readonly tone?: 'brand' | 'success';
   readonly className?: string;
 }
 
@@ -21,7 +23,17 @@ export interface CheckboxProps {
  * (`mixed`) is expressible, which a native input cannot do without JS anyway.
  */
 export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(function Checkbox(
-  { checked, indeterminate = false, onCheckedChange, label, ariaLabel, disabled = false, size = 'md', className },
+  {
+    checked,
+    indeterminate = false,
+    onCheckedChange,
+    label,
+    ariaLabel,
+    disabled = false,
+    size = 'md',
+    tone = 'brand',
+    className,
+  },
   ref,
 ) {
   const id = useNamespacedId('checkbox-');
@@ -43,8 +55,12 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(function Ch
         'inline-flex shrink-0 items-center justify-center rounded-sm border transition-colors duration-150',
         box,
         checked || indeterminate
-          ? 'border-brand bg-brand-solid text-fg-on-brand'
-          : 'border-primary bg-surface text-transparent hover:border-brand hover:bg-brand-subtle',
+          ? tone === 'success'
+            ? 'border-success-600 bg-success-600 text-white'
+            : 'border-brand bg-brand-solid text-fg-on-brand'
+          : tone === 'success'
+            ? 'border-primary bg-surface text-transparent hover:border-success-600 hover:bg-status-done-subtle'
+            : 'border-primary bg-surface text-transparent hover:border-brand hover:bg-brand-subtle',
         disabled && 'cursor-not-allowed border-disabled bg-muted text-fg-disabled',
         className,
       )}

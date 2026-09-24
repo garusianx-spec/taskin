@@ -27,6 +27,7 @@ export const MenuItem = forwardRef<HTMLButtonElement, MenuItemProps>(function Me
       ref={ref}
       type="button"
       role="menuitem"
+      aria-keyshortcuts={shortcut}
       disabled={disabled}
       onClick={onSelect}
       className={cn(

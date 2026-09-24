@@ -25,11 +25,11 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 
 const VARIANTS: Readonly<Record<ButtonVariant, string>> = {
   primary:
-    'bg-brand-solid text-fg-on-brand border border-transparent shadow-xs hover:bg-brand-700 active:bg-brand-800 disabled:bg-muted disabled:text-fg-disabled disabled:shadow-none',
+    'bg-brand-solid text-fg-on-brand border border-transparent shadow-xs hover:bg-brand-solid-hover active:bg-brand-solid-hover disabled:bg-muted disabled:text-fg-disabled disabled:shadow-none',
   secondary:
     'bg-surface text-fg-secondary border border-primary shadow-xs hover:bg-hover hover:text-fg-primary active:bg-active disabled:text-fg-disabled disabled:border-disabled disabled:shadow-none',
   tertiary:
-    'bg-brand-subtle text-fg-brand border border-transparent hover:bg-brand-100 active:bg-brand-200 disabled:bg-muted disabled:text-fg-disabled',
+    'bg-brand-subtle text-fg-brand border border-transparent hover:bg-brand-subtle-hover active:bg-brand-subtle-hover disabled:bg-muted disabled:text-fg-disabled',
   ghost:
     'bg-transparent text-fg-tertiary border border-transparent hover:bg-hover hover:text-fg-primary active:bg-active disabled:text-fg-disabled',
   destructive:

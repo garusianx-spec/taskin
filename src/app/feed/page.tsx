@@ -11,7 +11,8 @@ import { describeDeadline, formatJalali } from '@/lib/jalali';
 import { formatCount, formatPercent } from '@/lib/format';
 import { statusLabel, statusTone } from '@/data/reference';
 import { cn } from '@/lib/cn';
-import { AppShell, useShellActions } from '@/components/layout/AppShell';
+import { AppShell } from '@/components/layout/AppShell';
+import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { Avatar, Badge, Button, ProgressBar, RelativeTime } from '@/components/ui';
 import {
   AddIcon,
@@ -52,7 +53,7 @@ export default function FeedPage() {
 
 function FeedContent() {
   const { state, dispatch, currentUser, totalUnread } = useWorkspace();
-  const { openTaskComposer } = useShellActions();
+  const { openTaskComposer } = useOverlays();
 
   const myTasks = useMemo(
     () => state.tasks.filter((task) => task.assigneeIds.includes(currentUser.id)),

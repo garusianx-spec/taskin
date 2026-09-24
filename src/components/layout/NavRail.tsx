@@ -2,23 +2,24 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ModuleId } from '@/types';
-import { MODULES } from '@/data/reference';
+import type { ModuleId, PresenceState } from '@/types';
+import { MODULES, PRESENCE_OPTIONS } from '@/data/reference';
 import { WORKSPACE, WORKSPACES } from '@/data/workspace';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { useWorkspace } from '@/store/WorkspaceProvider';
+import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { Avatar, Button, CountPill, IconButton, Popover, PopoverDivider, Tooltip } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { ThemePicker } from '@/components/theme/ThemePicker';
+import { QuickCreateMenu } from './QuickCreateMenu';
 import {
   AddIcon,
   CalendarIcon,
-  CheckIcon,
-  DirectoryIcon,
   HomeIcon,
   LogoutIcon,
   MessagesIcon,
+  NotebookIcon,
   NotificationIcon,
   PaletteIcon,
   PeopleIcon,
@@ -33,6 +34,7 @@ const MODULE_ICONS: Readonly<Record<ModuleId, typeof HomeIcon>> = {
   chats: MessagesIcon,
   tasks: TaskSquareIcon,
   calendar: CalendarIcon,
+  notes: NotebookIcon,
   directory: PeopleIcon,
 };
 
@@ -42,7 +44,7 @@ const MODULE_ICONS: Readonly<Record<ModuleId, typeof HomeIcon>> = {
  */
 export function NavRail() {
   const pathname = usePathname();
-  const { currentUser, totalUnread } = useWorkspace();
+  const { currentUser, totalUnread, state } = useWorkspace();
 
   return (
     <nav
@@ -121,6 +123,8 @@ export function NavRail() {
           fullName={currentUser.fullName}
           initials={currentUser.initials}
           jobTitle={currentUser.jobTitle}
+          presence={currentUser.presence}
+          statusMessage={state.profile.statusMessage}
         />
       </div>
     </nav>
@@ -185,6 +189,7 @@ function QuickCreate() {
     <Popover
       label="ایجاد سریع"
       align="start"
+      haspopup="menu"
       trigger={
         <IconButton
           label="ایجاد سریع"
@@ -195,70 +200,38 @@ function QuickCreate() {
         />
       }
     >
-      {(close) => (
-        <MenuList>
-          <MenuItem onSelect={close} icon={<TaskSquareIcon size={18} />} shortcut="N">
-            وظیفه جدید
-          </MenuItem>
-          <MenuItem onSelect={close} icon={<MessagesIcon size={18} />} shortcut="M">
-            گفتگوی جدید
-          </MenuItem>
-          <MenuItem onSelect={close} icon={<CalendarIcon size={18} />}>
-            رویداد تقویم
-          </MenuItem>
-          <MenuItem onSelect={close} icon={<DirectoryIcon size={18} />}>
-            دعوت همکار
-          </MenuItem>
-        </MenuList>
-      )}
+      {(close) => <QuickCreateMenu close={close} />}
     </Popover>
   );
 }
 
+/** Opens the notification centre; the badge counts unread notifications, not chat messages. */
 function NotificationsBell() {
-  const { state } = useWorkspace();
-  const mentionCount = state.messages.filter(
-    (message) => message.body.kind === 'text' && message.readByIds.length === 0,
-  ).length;
+  const { unreadNotifications } = useWorkspace();
+  const { active, open } = useOverlays();
 
   return (
-    <Popover
-      label="اعلان‌ها"
-      placement="top"
-      align="start"
-      panelClassName="min-w-72"
-      trigger={
-        <span className="relative inline-flex">
-          <IconButton label="اعلان‌ها" icon={<NotificationIcon size={21} />} size="lg" />
-          {mentionCount > 0 && (
-            <CountPill
-              value={formatCount(mentionCount)}
-              tone="error"
-              className="pointer-events-none absolute -top-1 -end-1 ring-2 ring-rail"
-            />
-          )}
-        </span>
-      }
-    >
-      {(close) => (
-        <div className="flex flex-col gap-1">
-          <p className="px-2.5 pb-1 pt-1.5 text-micro font-semibold uppercase tracking-wide text-fg-quaternary">
-            اعلان‌های خوانده‌نشده
-          </p>
-          <MenuList>
-            <MenuItem onSelect={close} icon={<MessagesIcon size={18} />}>
-              پیام‌های اشاره‌شده به شما
-            </MenuItem>
-            <MenuItem onSelect={close} icon={<TaskSquareIcon size={18} />}>
-              وظایف ارجاع‌شده امروز
-            </MenuItem>
-            <MenuItem onSelect={close} icon={<CheckIcon size={18} />}>
-              علامت‌گذاری همه به‌عنوان خوانده‌شده
-            </MenuItem>
-          </MenuList>
-        </div>
+    <span className="relative inline-flex">
+      <IconButton
+        label={
+          unreadNotifications > 0
+            ? `اعلان‌ها — ${formatCount(unreadNotifications)} خوانده‌نشده`
+            : 'اعلان‌ها'
+        }
+        icon={<NotificationIcon size={21} />}
+        size="lg"
+        aria-haspopup="dialog"
+        aria-expanded={active?.kind === 'notifications'}
+        onClick={() => open({ kind: 'notifications' })}
+      />
+      {unreadNotifications > 0 && (
+        <CountPill
+          value={formatCount(unreadNotifications)}
+          tone="error"
+          className="pointer-events-none absolute -top-1 -end-1 ring-2 ring-rail"
+        />
       )}
-    </Popover>
+    </span>
   );
 }
 
@@ -266,9 +239,14 @@ interface ProfileMenuProps {
   readonly fullName: string;
   readonly initials: string;
   readonly jobTitle: string;
+  readonly presence: PresenceState;
+  readonly statusMessage: string;
 }
 
-function ProfileMenu({ fullName, initials, jobTitle }: ProfileMenuProps) {
+function ProfileMenu({ fullName, initials, jobTitle, presence, statusMessage }: ProfileMenuProps) {
+  const { open } = useOverlays();
+  const presenceLabel = PRESENCE_OPTIONS.find((option) => option.id === presence)?.label ?? '';
+
   return (
     <Popover
       label="حساب کاربری"
@@ -277,40 +255,54 @@ function ProfileMenu({ fullName, initials, jobTitle }: ProfileMenuProps) {
       panelClassName="min-w-64"
       trigger={
         <button type="button" className="mt-1 rounded-full">
-          <Avatar name={fullName} initials={initials} tone="brand" size="md" presence="online" />
-          <span className="sr-only">{`حساب کاربری — ${fullName}`}</span>
+          <Avatar name={fullName} initials={initials} tone="brand" size="md" presence={presence} decorative />
+          <span className="sr-only">{`حساب کاربری — ${fullName}، ${presenceLabel}`}</span>
         </button>
       }
     >
-      {(close) => (
-        <>
-          <div className="flex items-center gap-3 px-2.5 py-2">
-            <Avatar name={fullName} initials={initials} tone="brand" size="md" decorative />
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-body-sm font-semibold text-fg-primary">{fullName}</span>
-              <span className="truncate text-micro text-fg-tertiary">{jobTitle}</span>
-            </span>
-          </div>
-          <PopoverDivider />
-          <MenuList>
-            <MenuItem onSelect={close} icon={<UserIcon size={18} />}>
-              پروفایل من
-            </MenuItem>
-            <MenuItem onSelect={close} icon={<ShieldIcon size={18} />}>
-              امنیت و ورود
-            </MenuItem>
+      {(close) => {
+        // Close first so focus returns to the avatar, then open the dialog, which records
+        // the avatar as the element to hand focus back to when it closes.
+        const run = (action: () => void) => () => {
+          close();
+          action();
+        };
+        return (
+          <>
+            <div className="flex items-center gap-3 px-2.5 py-2">
+              <Avatar name={fullName} initials={initials} tone="brand" size="md" presence={presence} decorative />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-body-sm font-semibold text-fg-primary">{fullName}</span>
+                <span className="truncate text-micro text-fg-tertiary">
+                  {statusMessage ? `${presenceLabel}، ${statusMessage}` : `${jobTitle}، ${presenceLabel}`}
+                </span>
+              </span>
+            </div>
             <PopoverDivider />
-            <MenuItem onSelect={close} icon={<LogoutIcon size={18} />} tone="danger">
-              خروج از حساب
-            </MenuItem>
-          </MenuList>
-          <div className="px-1 pt-1">
-            <Button variant="secondary" size="sm" fullWidth onClick={close}>
-              بستن
-            </Button>
-          </div>
-        </>
-      )}
+            <MenuList>
+              <MenuItem onSelect={run(() => open({ kind: 'profile' }))} icon={<UserIcon size={18} />}>
+                پروفایل من
+              </MenuItem>
+              <MenuItem onSelect={run(() => open({ kind: 'security' }))} icon={<ShieldIcon size={18} />}>
+                امنیت و ورود
+              </MenuItem>
+              <PopoverDivider />
+              <MenuItem
+                onSelect={run(() => open({ kind: 'sign-out' }))}
+                icon={<LogoutIcon size={18} />}
+                tone="danger"
+              >
+                خروج از حساب
+              </MenuItem>
+            </MenuList>
+            <div className="px-1 pt-1">
+              <Button variant="secondary" size="sm" fullWidth onClick={close}>
+                بستن
+              </Button>
+            </div>
+          </>
+        );
+      }}
     </Popover>
   );
 }

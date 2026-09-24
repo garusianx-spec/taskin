@@ -404,3 +404,44 @@ export const SmsIcon = createIcon('SmsIcon', {
 export const CallIcon = createIcon('CallIcon', {
   primary: ['M21 17.2v2.3a1.8 1.8 0 0 1-2 1.8 17.8 17.8 0 0 1-7.8-2.8 17.5 17.5 0 0 1-5.4-5.4A17.8 17.8 0 0 1 3 5.2 1.8 1.8 0 0 1 4.8 3.2h2.3a1.8 1.8 0 0 1 1.8 1.6c.1.9.3 1.7.7 2.5a1.8 1.8 0 0 1-.4 2l-1 1a14 14 0 0 0 5.4 5.4l1-1a1.8 1.8 0 0 1 2-.4c.8.3 1.6.6 2.5.7a1.8 1.8 0 0 1 1.6 1.8Z'],
 });
+
+/* ------------------------------- Notes & editor ------------------------------- */
+
+export const NotebookIcon = createIcon('NotebookIcon', {
+  primary: ['M6.5 3.5h11a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-11a1.5 1.5 0 0 1-1.5-1.5v-14a1.5 1.5 0 0 1 1.5-1.5Z', 'M9 3.5v17'],
+  secondary: ['M12 8h4.5M12 11.5h4.5', 'M3.5 7.5H5M3.5 12H5M3.5 16.5H5'],
+});
+
+export const HeadingIcon = createIcon('HeadingIcon', {
+  primary: ['M6 5v14', 'M18 5v14', 'M6 12h12'],
+});
+
+export const BoldIcon = createIcon('BoldIcon', {
+  primary: ['M7 5h6a3.5 3.5 0 0 1 0 7H7V5Z', 'M7 12h7a3.5 3.5 0 0 1 0 7H7v-7Z'],
+});
+
+export const ItalicIcon = createIcon('ItalicIcon', {
+  primary: ['M10 5h8', 'M6 19h8', 'm14.5 5-5 14'],
+});
+
+export const ChecklistIcon = createIcon('ChecklistIcon', {
+  primary: ['M11.5 7h8.5', 'M11.5 17h8.5'],
+  secondary: ['m3.5 6.5 1.8 1.8L8.5 5', 'M4 15.5a1 1 0 0 1 1-1h2.5a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2.5Z'],
+});
+
+/* ------------------------------- Calendar & account ------------------------------- */
+
+export const MilestoneIcon = createIcon('MilestoneIcon', {
+  primary: ['M12 3.5 20.5 12 12 20.5 3.5 12 12 3.5Z'],
+  secondary: ['M12 8.5 15.5 12 12 15.5 8.5 12 12 8.5Z'],
+});
+
+export const MobileIcon = createIcon('MobileIcon', {
+  primary: ['M7 4.5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-15Z'],
+  secondary: ['M11 18h2'],
+});
+
+export const EyeSlashIcon = createIcon('EyeSlashIcon', {
+  primary: ['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z', 'm4 4 16 16'],
+  secondary: ['M12 15a3 3 0 0 1-3-3'],
+});

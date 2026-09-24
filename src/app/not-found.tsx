@@ -10,7 +10,7 @@ export default function NotFound() {
       </p>
       <Link
         href="/feed"
-        className="rounded-lg bg-brand-solid px-4 py-2.5 text-body font-semibold text-fg-on-brand shadow-xs transition-colors hover:bg-brand-700"
+        className="rounded-lg bg-brand-solid px-4 py-2.5 text-body font-semibold text-fg-on-brand shadow-xs transition-colors hover:bg-brand-solid-hover"
       >
         بازگشت به میز کار
       </Link>

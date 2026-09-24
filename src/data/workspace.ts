@@ -1,9 +1,13 @@
 import type {
   ActivityItem,
-  AgendaEntry,
+  AppNotification,
   Attachment,
+  CalendarEvent,
   Conversation,
+  Invitation,
+  LoginSession,
   Message,
+  Note,
   Project,
   Task,
   User,
@@ -24,6 +28,9 @@ const at = (dayOffset: number, hours = 9, minutes = 0): string => {
   date.setHours(hours, minutes, 0, 0);
   return date.toISOString();
 };
+
+const minutesAgo = (minutes: number): string =>
+  new Date(NOW.getTime() - minutes * 60_000).toISOString();
 
 const dateOnly = (dayOffset: number): string => {
   const date = new Date(NOW);
@@ -304,6 +311,8 @@ export const TASKS: readonly Task[] = [
     labels: ['احراز هویت', 'ریزش کاربر'],
     starred: true,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-102',
@@ -337,6 +346,8 @@ export const TASKS: readonly Task[] = [
     labels: ['RTL', 'رفع اشکال'],
     starred: false,
     sourceMessageId: 'm-14',
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-103',
@@ -361,6 +372,8 @@ export const TASKS: readonly Task[] = [
     labels: ['معماری', 'موبایل'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-104',
@@ -386,6 +399,8 @@ export const TASKS: readonly Task[] = [
     labels: ['دیزاین سیستم'],
     starred: true,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-105',
@@ -420,6 +435,8 @@ export const TASKS: readonly Task[] = [
     labels: ['نوروز', 'محتوا'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-106',
@@ -445,6 +462,8 @@ export const TASKS: readonly Task[] = [
     labels: ['امنیت', 'بحرانی'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-107',
@@ -468,6 +487,8 @@ export const TASKS: readonly Task[] = [
     labels: ['گزارش مالی'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-108',
@@ -488,6 +509,8 @@ export const TASKS: readonly Task[] = [
     labels: ['تقویم شمسی'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-109',
@@ -511,6 +534,8 @@ export const TASKS: readonly Task[] = [
     labels: ['اعلان'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
   {
     id: 't-110',
@@ -534,6 +559,8 @@ export const TASKS: readonly Task[] = [
     labels: ['کارایی'],
     starred: false,
     sourceMessageId: null,
+    boardColumnId: null,
+    reopenTo: null,
   },
 ];
 
@@ -883,110 +910,328 @@ export const MESSAGES: readonly Message[] = [
   },
 ];
 
-/* ------------------------------ Agenda ------------------------------ */
+/* ------------------------------ Calendar ------------------------------ */
 
-export const AGENDA: readonly AgendaEntry[] = [
+/**
+ * Meetings, reminders and project milestones. Task deadlines are deliberately absent: the
+ * calendar derives them from the live task list so they can never drift from the board.
+ */
+export const CALENDAR_EVENTS: readonly CalendarEvent[] = [
   {
-    id: 'a-1',
+    id: 'ev-1',
     kind: 'meeting',
     title: 'بازبینی طراحی جریان ورود',
     date: dateOnly(0),
-    startTime: '۱۰:۰۰',
-    endTime: '۱۱:۰۰',
-    relatedTaskId: 't-101',
-    tone: 'progress',
+    startTime: '10:00',
+    endTime: '11:00',
+    projectId: 'p-core-web',
+    attendeeIds: ['u-sahar', 'u-nasim', 'u-arash'],
+    description: 'مرور وایرفریم سه حالت ورود و تصمیم درباره بازیابی رمز.',
   },
   {
-    id: 'a-2',
-    kind: 'task',
-    title: 'مهلت: رفع ناسازگاری راست‌به‌چپ جدول',
+    id: 'ev-2',
+    kind: 'meeting',
+    title: 'هماهنگی بودجه کمپین با تیم مالی',
     date: dateOnly(0),
-    startTime: null,
-    endTime: null,
-    relatedTaskId: 't-102',
-    tone: 'blocked',
+    startTime: '14:30',
+    endTime: '15:15',
+    projectId: 'p-campaign',
+    attendeeIds: ['u-sahar', 'u-mahtab', 'u-leila'],
+    description: '',
   },
   {
-    id: 'a-3',
-    kind: 'note',
-    title: 'جمع‌بندی بازخورد کاربران بتا',
-    date: dateOnly(0),
-    startTime: null,
-    endTime: null,
-    relatedTaskId: null,
-    tone: 'todo',
-  },
-  {
-    id: 'a-4',
-    kind: 'task',
-    title: 'مهلت: طراحی مجدد صفحه ورود',
-    date: dateOnly(1),
-    startTime: null,
-    endTime: null,
-    relatedTaskId: 't-101',
-    tone: 'progress',
-  },
-  {
-    id: 'a-5',
+    id: 'ev-3',
     kind: 'meeting',
     title: 'استندآپ هفتگی مهندسی',
     date: dateOnly(1),
-    startTime: '۰۹:۳۰',
-    endTime: '۰۹:۴۵',
-    relatedTaskId: null,
-    tone: 'review',
+    startTime: '09:30',
+    endTime: '09:45',
+    projectId: null,
+    attendeeIds: ['u-arash', 'u-payam', 'u-sahar'],
+    description: '',
   },
   {
-    id: 'a-6',
-    kind: 'task',
-    title: 'مهلت: صورت‌های مالی سه‌ماهه',
-    date: dateOnly(2),
-    startTime: null,
-    endTime: null,
-    relatedTaskId: 't-107',
-    tone: 'progress',
-  },
-  {
-    id: 'a-7',
+    id: 'ev-4',
     kind: 'reminder',
     title: 'ارسال گزارش پیشرفت به هیئت‌مدیره',
     date: dateOnly(3),
-    startTime: '۱۶:۰۰',
+    startTime: '16:00',
     endTime: null,
-    relatedTaskId: null,
-    tone: 'todo',
+    projectId: null,
+    attendeeIds: ['u-sahar'],
+    description: '',
   },
   {
-    id: 'a-8',
-    kind: 'task',
-    title: 'مهلت: تقویم محتوایی کمپین نوروزی',
-    date: dateOnly(4),
-    startTime: null,
-    endTime: null,
-    relatedTaskId: 't-105',
-    tone: 'progress',
-  },
-  {
-    id: 'a-9',
+    id: 'ev-5',
     kind: 'meeting',
     title: 'جلسه عمومی سازمان',
     date: dateOnly(5),
-    startTime: '۱۴:۰۰',
-    endTime: '۱۵:۳۰',
-    relatedTaskId: null,
-    tone: 'review',
+    startTime: '14:00',
+    endTime: '15:30',
+    projectId: null,
+    attendeeIds: USERS.map((user) => user.id),
+    description: 'گزارش فصلی مدیرعامل و پرسش و پاسخ.',
   },
   {
-    id: 'a-10',
-    kind: 'task',
-    title: 'مهلت: یکپارچه‌سازی اعلان پیامکی',
-    date: dateOnly(6),
+    id: 'ev-6',
+    kind: 'milestone',
+    title: 'انتشار نسخه ۲.۴ سامانه مشتریان',
+    date: dateOnly(8),
     startTime: null,
     endTime: null,
-    relatedTaskId: 't-109',
-    tone: 'progress',
+    projectId: 'p-core-web',
+    attendeeIds: [],
+    description: 'ورود دومرحله‌ای و رفع آسیب‌پذیری‌های تست نفوذ باید پیش از این تاریخ بسته شوند.',
+  },
+  {
+    id: 'ev-7',
+    kind: 'milestone',
+    title: 'بستن دفاتر سه‌ماهه چهارم',
+    date: dateOnly(10),
+    startTime: null,
+    endTime: null,
+    projectId: 'p-finance',
+    attendeeIds: [],
+    description: '',
+  },
+  {
+    id: 'ev-8',
+    kind: 'milestone',
+    title: 'آغاز انتشار محتوای کمپین نوروزی',
+    date: dateOnly(12),
+    startTime: null,
+    endTime: null,
+    projectId: 'p-campaign',
+    attendeeIds: [],
+    description: '',
   },
 ];
+
+/* ------------------------------ Notes ------------------------------ */
+
+export const NOTES: readonly Note[] = [
+  {
+    id: 'note-1',
+    notebook: 'meetings',
+    title: 'جمع‌بندی بازخورد کاربران بتا',
+    body: [
+      '## نکات کلیدی',
+      '- ۶ نفر از ۸ کاربر مرحله رمز یک‌بارمصرف را **گیج‌کننده** دانستند',
+      '- پیشنهاد تکرارشونده: ورود با اثر انگشت روی موبایل',
+      '',
+      '## اقدام‌ها',
+      '- [x] ارسال خلاصه برای تیم طراحی',
+      '- [ ] اولویت‌بندی درخواست ورود بیومتریک',
+      '- [ ] هماهنگی جلسه دوم با کاربران سازمانی',
+    ].join('\n'),
+    colors: ['blue'],
+    pinned: true,
+    createdAt: at(-1, 16, 20),
+    updatedAt: at(0, 8, 45),
+    linkedTaskId: null,
+  },
+  {
+    id: 'note-2',
+    notebook: 'work',
+    title: 'چک‌لیست انتشار نسخه ۲.۴',
+    body: [
+      '- [x] فریز کد و ساخت نسخه کاندید',
+      '- [x] اجرای تست‌های رگرسیون',
+      '- [ ] تایید مشاور امنیت روی گزارش تست نفوذ',
+      '- [ ] به‌روزرسانی یادداشت انتشار',
+      '- [ ] اطلاع‌رسانی به پشتیبانی مشتریان',
+    ].join('\n'),
+    colors: ['red', 'amber'],
+    pinned: true,
+    createdAt: at(-3, 11, 0),
+    updatedAt: at(-1, 18, 10),
+    linkedTaskId: null,
+  },
+  {
+    id: 'note-3',
+    notebook: 'ideas',
+    title: 'ایده: خلاصه هوشمند گفتگوها',
+    body: [
+      'وقتی کاربر بعد از چند ساعت به یک کانال شلوغ برمی‌گردد، یک *خلاصه سه‌خطی* بالای پیام‌های خوانده‌نشده نمایش دهیم.',
+      '',
+      '- می‌تواند با «تبدیل به وظیفه» ترکیب شود',
+      '- نیاز به بررسی حریم خصوصی دارد',
+    ].join('\n'),
+    colors: ['violet'],
+    pinned: false,
+    createdAt: at(-5, 21, 30),
+    updatedAt: at(-5, 21, 45),
+    linkedTaskId: null,
+  },
+  {
+    id: 'note-4',
+    notebook: 'personal',
+    title: 'برنامه این هفته',
+    body: [
+      '- [x] بازبینی نقشه راه فصل بعد',
+      '- [ ] یک‌به‌یک با نسیم',
+      '- [ ] مطالعه گزارش رقبا',
+    ].join('\n'),
+    colors: ['green'],
+    pinned: false,
+    createdAt: at(-2, 7, 50),
+    updatedAt: at(-2, 7, 55),
+    linkedTaskId: null,
+  },
+  {
+    id: 'note-5',
+    notebook: 'meetings',
+    title: 'صورت‌جلسه کمیته بودجه',
+    body: [
+      '## مصوبات',
+      '- سقف بودجه تبلیغات کمپین: ۸۵۰ میلیون ریال',
+      '- گزارش هزینه‌ها هر دو هفته یک بار',
+    ].join('\n'),
+    colors: [],
+    pinned: false,
+    createdAt: at(-4, 13, 0),
+    updatedAt: at(-4, 13, 40),
+    linkedTaskId: null,
+  },
+  {
+    id: 'note-6',
+    notebook: 'ideas',
+    title: 'نام‌گذاری ستون‌های بورد',
+    body: 'به‌جای «منتظر تایید» از «بازبینی همتا» استفاده کنیم؟ در جلسه تیم مطرح شود.',
+    colors: ['gray'],
+    pinned: false,
+    createdAt: at(-6, 10, 5),
+    updatedAt: at(-6, 10, 5),
+    linkedTaskId: null,
+  },
+];
+
+/* ------------------------------ Notifications ------------------------------ */
+
+export const NOTIFICATIONS: readonly AppNotification[] = [
+  {
+    id: 'n-1',
+    actorId: 'u-arash',
+    createdAt: minutesAgo(5),
+    read: false,
+    event: { kind: 'status-changed', from: 'in-progress', to: 'review' },
+    subject: 'رفع ناسازگاری چیدمان راست‌به‌چپ در جدول گزارش‌ها',
+    target: { kind: 'task', taskId: 't-102' },
+  },
+  {
+    id: 'n-2',
+    actorId: 'u-nasim',
+    createdAt: minutesAgo(18),
+    read: false,
+    event: { kind: 'mention', excerpt: '@سحر نسخه نهایی وایرفریم داشبورد را در پوشه پروژه گذاشتم.' },
+    subject: 'محصول و طراحی',
+    target: { kind: 'conversation', conversationId: 'conv-product' },
+  },
+  {
+    id: 'n-3',
+    actorId: 'u-kamran',
+    createdAt: minutesAgo(52),
+    read: false,
+    event: { kind: 'task-assigned' },
+    subject: 'رفع آسیب‌پذیری‌های گزارش‌شده در تست نفوذ',
+    target: { kind: 'task', taskId: 't-106' },
+  },
+  {
+    id: 'n-4',
+    actorId: 'u-payam',
+    createdAt: minutesAgo(95),
+    read: false,
+    event: { kind: 'reply', excerpt: 'بله، تست صفحه‌خوان را تا پایان امروز انجام می‌دهم.' },
+    subject: 'طراحی مجدد صفحه ورود و احراز هویت دومرحله‌ای',
+    target: { kind: 'task', taskId: 't-101' },
+  },
+  {
+    id: 'n-5',
+    actorId: 'u-mahtab',
+    createdAt: minutesAgo(60 * 4),
+    read: true,
+    event: { kind: 'comment', excerpt: 'نسخه دوم کپشن‌ها برای بازبینی آماده است.' },
+    subject: 'تدوین تقویم محتوایی کمپین نوروزی',
+    target: { kind: 'task', taskId: 't-105' },
+  },
+  {
+    id: 'n-6',
+    actorId: 'u-arash',
+    createdAt: at(-1, 17, 40),
+    read: false,
+    event: { kind: 'mention', excerpt: '@سحر لطفاً چک‌لیست انتشار را تا فردا تایید کن.' },
+    subject: 'انتشار نسخه ۲.۴',
+    target: { kind: 'conversation', conversationId: 'conv-release' },
+  },
+  {
+    id: 'n-7',
+    actorId: 'u-leila',
+    createdAt: at(-1, 11, 5),
+    read: true,
+    event: { kind: 'status-changed', from: 'in-progress', to: 'review' },
+    subject: 'تهیه صورت‌های مالی سه‌ماهه چهارم',
+    target: { kind: 'task', taskId: 't-107' },
+  },
+  {
+    id: 'n-8',
+    actorId: 'u-payam',
+    createdAt: at(-2, 15, 0),
+    read: true,
+    event: { kind: 'status-changed', from: 'review', to: 'done' },
+    subject: 'پیاده‌سازی موتور چندپوسته‌ای و انتخابگر رنگ سازمان',
+    target: { kind: 'task', taskId: 't-104' },
+  },
+  {
+    id: 'n-9',
+    actorId: 'u-arash',
+    createdAt: at(-3, 10, 20),
+    read: true,
+    event: { kind: 'reply', excerpt: 'سند معماری را بعد از جلسه با تیم موبایل به‌روز می‌کنم.' },
+    subject: 'تهیه سند معماری همگام‌سازی آفلاین',
+    target: { kind: 'task', taskId: 't-103' },
+  },
+];
+
+/* ------------------------------ Account ------------------------------ */
+
+export const LOGIN_SESSIONS: readonly LoginSession[] = [
+  {
+    id: 'ls-1',
+    device: 'کروم روی مک‌اواس',
+    location: 'تهران، ایران',
+    lastActiveAt: minutesAgo(0),
+    current: true,
+  },
+  {
+    id: 'ls-2',
+    device: 'اپلیکیشن تسکین روی اندروید',
+    location: 'تهران، ایران',
+    lastActiveAt: minutesAgo(60 * 3),
+    current: false,
+  },
+  {
+    id: 'ls-3',
+    device: 'فایرفاکس روی ویندوز',
+    location: 'اصفهان، ایران',
+    lastActiveAt: at(-4, 19, 10),
+    current: false,
+  },
+];
+
+export const INVITATIONS: readonly Invitation[] = [
+  {
+    id: 'inv-1',
+    email: 'reza.ahmadi@rahnama.ir',
+    role: 'member',
+    department: 'engineering',
+    message: '',
+    invitedAt: at(-1, 12, 0),
+    invitedById: 'u-arash',
+  },
+];
+
+/** When the seeded account last changed its password. */
+export const PASSWORD_CHANGED_AT = at(-47, 10, 0);
 
 /* ------------------------------ Activity ------------------------------ */
 

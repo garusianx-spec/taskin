@@ -4,6 +4,7 @@ import './globals.css';
 import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/theme';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import { WorkspaceProvider } from '@/store/WorkspaceProvider';
+import { OverlayProvider } from '@/components/overlays/OverlayProvider';
 
 export const metadata: Metadata = {
   title: {
@@ -38,7 +39,9 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       </head>
       <body>
         <ThemeProvider>
-          <WorkspaceProvider>{children}</WorkspaceProvider>
+          <WorkspaceProvider>
+            <OverlayProvider>{children}</OverlayProvider>
+          </WorkspaceProvider>
         </ThemeProvider>
       </body>
     </html>

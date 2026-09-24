@@ -128,7 +128,7 @@ export function VoicePlayer({ durationSec, waveform, src, outgoing, label }: Voi
           'flex size-9 shrink-0 items-center justify-center rounded-full transition-colors',
           outgoing
             ? 'bg-white/20 text-fg-on-brand hover:bg-white/30'
-            : 'bg-brand-solid text-fg-on-brand hover:bg-brand-700',
+            : 'bg-brand-solid text-fg-on-brand hover:bg-brand-solid-hover',
         )}
       >
         {playing ? <PauseIcon size={18} /> : <PlayIcon size={18} className="ms-0.5" />}
@@ -183,7 +183,7 @@ export function VoicePlayer({ durationSec, waveform, src, outgoing, label }: Voi
                     ? 'bg-white'
                     : 'bg-white/35'
                   : played
-                    ? 'bg-brand-600'
+                    ? 'bg-brand-solid'
                     : 'bg-gray-300',
               )}
               style={{ height: `${Math.round(amplitude * 24) + 4}px` }}

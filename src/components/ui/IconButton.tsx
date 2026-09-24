@@ -28,7 +28,7 @@ const VARIANTS: Readonly<Record<IconButtonVariant, string>> = {
   ghost: 'text-fg-tertiary hover:bg-hover hover:text-fg-primary active:bg-active',
   subtle: 'bg-sunken text-fg-tertiary hover:bg-hover hover:text-fg-primary',
   secondary: 'border border-primary bg-surface text-fg-secondary shadow-xs hover:bg-hover',
-  primary: 'bg-brand-solid text-fg-on-brand shadow-xs hover:bg-brand-700',
+  primary: 'bg-brand-solid text-fg-on-brand shadow-xs hover:bg-brand-solid-hover',
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(

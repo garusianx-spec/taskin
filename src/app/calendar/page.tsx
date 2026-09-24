@@ -1,244 +1,304 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import type { AgendaEntry, AgendaEntryKind } from '@/types';
-import { AGENDA } from '@/data/workspace';
+import { useEffect, useMemo, useState } from 'react';
 import { useWorkspace } from '@/store/WorkspaceProvider';
+import { calendarItemsByDate, type CalendarItem } from '@/store/selectors';
+import { taskDraft } from '@/store/drafts';
 import {
-  JALALI_WEEKDAYS_SHORT,
+  addDays,
   buildMonthGrid,
+  daysBetween,
   formatJalali,
+  fromISODate,
   gregorianToJalali,
   shiftJalaliMonth,
   toISODate,
-  toPersianDigits,
 } from '@/lib/jalali';
 import { formatCount } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { AppShell } from '@/components/layout/AppShell';
+import { useOverlays } from '@/components/overlays/OverlayProvider';
+import { MonthGrid } from '@/components/calendar/MonthGrid';
+import {
+  ItemIcon,
+  itemKindLabel,
+  itemTimeLabel,
+  itemTitle,
+  itemTone,
+} from '@/components/calendar/calendar-item';
 import { Badge, Button, EmptyState, IconButton } from '@/components/ui';
 import {
+  AddIcon,
   CalendarIcon,
   ChevronBackwardIcon,
   ChevronForwardIcon,
-  ClockIcon,
-  DocumentIcon,
+  FlagIcon,
+  MilestoneIcon,
   NotificationIcon,
-  TaskSquareIcon,
 } from '@/components/icons';
 
-const KIND_ICONS: Readonly<Record<AgendaEntryKind, typeof CalendarIcon>> = {
-  task: TaskSquareIcon,
-  meeting: CalendarIcon,
-  note: DocumentIcon,
-  reminder: NotificationIcon,
-};
-
-const KIND_LABELS: Readonly<Record<AgendaEntryKind, string>> = {
-  task: 'وظیفه',
-  meeting: 'جلسه',
-  note: 'یادداشت',
-  reminder: 'یادآور',
-};
+/** How far ahead the side panel looks. */
+const UPCOMING_DAYS = 14;
 
 export default function CalendarPage() {
-  const { dispatch } = useWorkspace();
+  return (
+    <AppShell>
+      <CalendarContent />
+    </AppShell>
+  );
+}
+
+/**
+ * Deadlines, meetings and milestones only — notes live in their own module now. A day holds
+ * at most two badges; everything else folds into the day summary, and a click anywhere on a
+ * day starts a task due that day.
+ */
+function CalendarContent() {
+  const { state, dispatch } = useWorkspace();
+  const { open, openTaskComposer } = useOverlays();
   const today = useMemo(() => new Date(), []);
-  const [selectedIso, setSelectedIso] = useState(() => toISODate(today));
+  const todayIso = useMemo(() => toISODate(today), [today]);
+  const [focusedIso, setFocusedIso] = useState(todayIso);
   const [cursor, setCursor] = useState(() => {
     const jalali = gregorianToJalali(today);
     return { year: jalali.year, month: jalali.month };
   });
 
-  const cells = useMemo(
-    () => buildMonthGrid(cursor.year, cursor.month, today),
-    [cursor.year, cursor.month, today],
+  // An event created elsewhere (quick-create, day summary) lands the calendar on its day.
+  const { calendarFocusDate } = state;
+  useEffect(() => {
+    if (!calendarFocusDate) return;
+    const jalali = gregorianToJalali(fromISODate(calendarFocusDate));
+    setCursor({ year: jalali.year, month: jalali.month });
+    setFocusedIso(calendarFocusDate);
+    dispatch({ type: 'clear-calendar-focus' });
+  }, [calendarFocusDate, dispatch]);
+
+  const cells = useMemo(() => buildMonthGrid(cursor.year, cursor.month, today), [cursor.year, cursor.month, today]);
+
+  // Completed work drops off the calendar: it is a planning surface, not a history.
+  const openTasks = useMemo(() => state.tasks.filter((task) => task.status !== 'done'), [state.tasks]);
+  const itemsByDate = useMemo(
+    () => calendarItemsByDate(openTasks, state.calendarEvents),
+    [openTasks, state.calendarEvents],
   );
 
-  const entriesByDate = useMemo(() => {
-    const map = new Map<string, AgendaEntry[]>();
-    for (const entry of AGENDA) {
-      const list = map.get(entry.date) ?? [];
-      list.push(entry);
-      map.set(entry.date, list);
-    }
-    return map;
-  }, []);
+  const monthIso = cells.find((cell) => cell.inCurrentMonth)?.iso ?? todayIso;
+  const monthItemCount = cells
+    .filter((cell) => cell.inCurrentMonth)
+    .reduce((sum, cell) => sum + (itemsByDate.get(cell.iso)?.length ?? 0), 0);
 
-  const selectedEntries = entriesByDate.get(selectedIso) ?? [];
-  const monthLabel = cells.find((cell) => cell.inCurrentMonth)?.iso;
+  const focusDate = (iso: string) => {
+    setFocusedIso(iso);
+    const jalali = gregorianToJalali(fromISODate(iso));
+    if (jalali.year !== cursor.year || jalali.month !== cursor.month) {
+      setCursor({ year: jalali.year, month: jalali.month });
+    }
+  };
 
   const step = (delta: number) => {
     const next = shiftJalaliMonth(cursor.year, cursor.month, delta);
     setCursor({ year: next.year, month: next.month });
   };
 
+  const createTask = (iso: string) => openTaskComposer(taskDraft({ dueDate: iso }));
+  const createEvent = (iso: string) => open({ kind: 'event-composer', date: iso });
+  const toggleComplete = (taskId: string, completed: boolean) =>
+    dispatch({ type: 'set-task-completed', taskId, completed });
+
   return (
-    <AppShell>
-      <div className="scrollbar-thin h-full overflow-y-auto">
-        <header className="flex flex-wrap items-center gap-3 border-b border-secondary bg-surface px-4 py-3 sm:px-6">
-          <div className="flex flex-col">
-            <h1 className="text-heading-sm font-bold text-fg-primary">تقویم و یادداشت</h1>
-            <span className="numeric text-caption text-fg-tertiary">
-              {monthLabel ? formatJalali(monthLabel, 'month-year') : ''}
-            </span>
-          </div>
-          <div className="ms-auto flex items-center gap-1.5">
-            <IconButton label="ماه قبل" icon={<ChevronBackwardIcon size={18} />} onClick={() => step(-1)} />
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                const jalali = gregorianToJalali(today);
-                setCursor({ year: jalali.year, month: jalali.month });
-                setSelectedIso(toISODate(today));
-              }}
-            >
-              امروز
-            </Button>
-            <IconButton label="ماه بعد" icon={<ChevronForwardIcon size={18} />} onClick={() => step(1)} />
-          </div>
-        </header>
-
-        <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[1fr_22rem]">
-          <section aria-label="نمای ماهانه" className="rounded-xl border border-secondary bg-surface p-3 shadow-xs">
-            <div role="grid" aria-label="تقویم هجری شمسی" className="grid grid-cols-7 gap-1">
-              {JALALI_WEEKDAYS_SHORT.map((day) => (
-                <div
-                  key={day}
-                  role="columnheader"
-                  className="flex h-8 items-center justify-center text-caption font-semibold text-fg-quaternary"
-                >
-                  {day}
-                </div>
-              ))}
-
-              {cells.map((cell) => {
-                const entries = entriesByDate.get(cell.iso) ?? [];
-                const isSelected = cell.iso === selectedIso;
-                const isFriday = cell.weekdayIndex === 6;
-
-                return (
-                  <button
-                    key={cell.iso}
-                    type="button"
-                    role="gridcell"
-                    aria-selected={isSelected}
-                    aria-current={cell.isToday ? 'date' : undefined}
-                    aria-label={`${formatJalali(cell.iso, 'long')} — ${formatCount(entries.length)} مورد`}
-                    onClick={() => setSelectedIso(cell.iso)}
-                    className={cn(
-                      'flex min-h-16 flex-col items-center gap-1 rounded-lg border p-1.5 transition-colors sm:min-h-20',
-                      isSelected
-                        ? 'border-brand bg-brand-subtle'
-                        : 'border-transparent hover:border-secondary hover:bg-hover',
-                      !cell.inCurrentMonth && 'opacity-40',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'numeric flex size-7 items-center justify-center rounded-full text-body-sm font-semibold',
-                        cell.isToday && 'bg-brand-solid text-fg-on-brand',
-                        !cell.isToday && isFriday && 'text-status-blocked',
-                        !cell.isToday && !isFriday && 'text-fg-primary',
-                      )}
-                    >
-                      {toPersianDigits(cell.jalali.day)}
-                    </span>
-
-                    <span className="flex flex-wrap justify-center gap-0.5">
-                      {entries.slice(0, 3).map((entry) => (
-                        <span
-                          key={entry.id}
-                          aria-hidden="true"
-                          className={cn(
-                            'size-1.5 rounded-full',
-                            entry.tone === 'blocked' && 'bg-status-blocked',
-                            entry.tone === 'progress' && 'bg-status-progress',
-                            entry.tone === 'done' && 'bg-status-done',
-                            entry.tone === 'review' && 'bg-status-review',
-                            entry.tone === 'todo' && 'bg-status-todo',
-                          )}
-                        />
-                      ))}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section aria-label="برنامه روز انتخاب‌شده" className="flex flex-col gap-3">
-            <div className="flex items-baseline gap-2">
-              <h2 className="text-title font-bold text-fg-primary">{formatJalali(selectedIso, 'long')}</h2>
-              <Badge tone="neutral" size="sm" numeric className="ms-auto">
-                {`${formatCount(selectedEntries.length)} مورد`}
-              </Badge>
-            </div>
-
-            {selectedEntries.length === 0 ? (
-              <EmptyState
-                compact
-                icon={<CalendarIcon size={20} />}
-                title="برنامه‌ای برای این روز ثبت نشده"
-                description="روز دیگری را انتخاب کنید یا رویداد جدیدی بسازید."
-              />
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {selectedEntries.map((entry) => {
-                  const Icon = KIND_ICONS[entry.kind];
-                  return (
-                    <li key={entry.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (entry.relatedTaskId) {
-                            dispatch({ type: 'open-task', taskId: entry.relatedTaskId });
-                          }
-                        }}
-                        disabled={entry.relatedTaskId === null}
-                        className={cn(
-                          'flex w-full items-start gap-3 rounded-xl border border-secondary bg-surface p-3 text-start shadow-xs transition-colors',
-                          entry.relatedTaskId ? 'hover:border-brand' : 'cursor-default',
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                            entry.tone === 'blocked' && 'bg-status-blocked-subtle text-status-blocked',
-                            entry.tone === 'progress' && 'bg-status-progress-subtle text-status-progress',
-                            entry.tone === 'done' && 'bg-status-done-subtle text-status-done',
-                            entry.tone === 'review' && 'bg-status-review-subtle text-status-review',
-                            entry.tone === 'todo' && 'bg-status-todo-subtle text-status-todo',
-                          )}
-                        >
-                          <Icon size={18} variant="twotone" />
-                        </span>
-                        <span className="flex min-w-0 flex-1 flex-col gap-1">
-                          <span className="truncate text-body-sm font-semibold text-fg-primary">
-                            {entry.title}
-                          </span>
-                          <span className="flex items-center gap-2">
-                            <Badge tone="neutral" size="sm">
-                              {KIND_LABELS[entry.kind]}
-                            </Badge>
-                            {entry.startTime && (
-                              <span className="numeric inline-flex items-center gap-1 text-micro text-fg-tertiary">
-                                <ClockIcon size={12} />
-                                {entry.endTime ? `${entry.startTime} تا ${entry.endTime}` : entry.startTime}
-                              </span>
-                            )}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
+    <div className="scrollbar-thin h-full overflow-y-auto">
+      <header className="flex flex-wrap items-center gap-3 border-b border-secondary bg-surface px-4 py-3 sm:px-6">
+        <div className="flex flex-col">
+          <h1 className="text-heading-sm font-bold text-fg-primary">تقویم</h1>
+          <span className="numeric text-caption text-fg-tertiary" aria-live="polite">
+            {`${formatJalali(monthIso, 'month-year')}، ${formatCount(monthItemCount)} مورد برنامه‌ریزی‌شده`}
+          </span>
         </div>
+        <div className="ms-auto flex items-center gap-1.5">
+          <IconButton label="ماه قبل" icon={<ChevronBackwardIcon size={18} />} onClick={() => step(-1)} />
+          <Button size="sm" variant="secondary" onClick={() => focusDate(todayIso)}>
+            امروز
+          </Button>
+          <IconButton label="ماه بعد" icon={<ChevronForwardIcon size={18} />} onClick={() => step(1)} />
+          <Button
+            size="sm"
+            iconStart={<AddIcon size={16} />}
+            aria-haspopup="dialog"
+            onClick={() => createEvent(focusedIso)}
+            className="ms-1.5"
+          >
+            <span className="hidden sm:inline">رویداد جدید</span>
+            <span className="sm:hidden">رویداد</span>
+          </Button>
+        </div>
+      </header>
+
+      <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[1fr_20rem]">
+        <section aria-label="نمای ماهانه" className="flex min-w-0 flex-col gap-3">
+          <Legend />
+          <div className="overflow-visible rounded-xl border border-secondary bg-surface shadow-xs">
+            <MonthGrid
+              cells={cells}
+              itemsByDate={itemsByDate}
+              today={today}
+              focusedIso={focusedIso}
+              onFocusDate={focusDate}
+              onCreateTask={createTask}
+              onCreateEvent={createEvent}
+              onOpenTask={(taskId) => dispatch({ type: 'open-task', taskId })}
+              onToggleComplete={toggleComplete}
+            />
+          </div>
+          <p className="text-caption text-fg-tertiary">
+            برای ثبت وظیفه‌ای با مهلت مشخص، روی هر روز کلیک کنید.
+          </p>
+        </section>
+
+        <UpcomingPanel
+          itemsByDate={itemsByDate}
+          today={today}
+          onOpenTask={(taskId) => dispatch({ type: 'open-task', taskId })}
+        />
       </div>
-    </AppShell>
+    </div>
+  );
+}
+
+function Legend() {
+  const entries = [
+    { label: 'مهلت وظیفه', Icon: FlagIcon, tone: 'bg-sunken text-fg-secondary' },
+    { label: 'جلسه', Icon: CalendarIcon, tone: 'bg-brand-subtle text-fg-brand' },
+    { label: 'یادآور', Icon: NotificationIcon, tone: 'bg-status-progress-subtle text-status-progress' },
+    { label: 'نقطه عطف', Icon: MilestoneIcon, tone: 'bg-status-done-subtle text-status-done' },
+  ] as const;
+  return (
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="راهنمای رنگ‌ها">
+      {entries.map(({ label, Icon, tone }) => (
+        <li key={label} className="flex items-center gap-1.5 text-caption text-fg-tertiary">
+          <span className={cn('flex size-5 items-center justify-center rounded-md', tone)} aria-hidden="true">
+            <Icon size={12} />
+          </span>
+          {label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+interface UpcomingPanelProps {
+  readonly itemsByDate: ReadonlyMap<string, readonly CalendarItem[]>;
+  readonly today: Date;
+  readonly onOpenTask: (taskId: string) => void;
+}
+
+/** Overdue deadlines, then the next two weeks day by day. */
+function UpcomingPanel({ itemsByDate, today, onOpenTask }: UpcomingPanelProps) {
+  const todayIso = toISODate(today);
+
+  const overdue = useMemo(() => {
+    const list: CalendarItem[] = [];
+    for (const [date, items] of itemsByDate) {
+      if (daysBetween(today, fromISODate(date)) < 0) list.push(...items.filter((item) => item.kind === 'deadline'));
+    }
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }, [itemsByDate, today]);
+
+  const days = useMemo(
+    () =>
+      Array.from({ length: UPCOMING_DAYS }, (_, offset) => addDays(todayIso, offset))
+        .map((date) => ({ date, items: itemsByDate.get(date) ?? [] }))
+        .filter((day) => day.items.length > 0),
+    [itemsByDate, todayIso],
+  );
+
+  const relativeDay = (date: string): string => {
+    const delta = daysBetween(today, fromISODate(date));
+    if (delta === 0) return 'امروز';
+    if (delta === 1) return 'فردا';
+    return formatJalali(date, 'long');
+  };
+
+  return (
+    <aside aria-labelledby="upcoming-title" className="flex flex-col gap-4">
+      <h2 id="upcoming-title" className="text-title font-bold text-fg-primary">
+        پیش رو
+      </h2>
+
+      {overdue.length > 0 && (
+        <section aria-label="دارای تأخیر" className="flex flex-col gap-2">
+          <h3 className="flex items-center gap-2 text-caption font-semibold text-status-blocked">
+            دارای تأخیر
+            <Badge tone="blocked" size="sm" numeric>
+              {formatCount(overdue.length)}
+            </Badge>
+          </h3>
+          <ul className="flex flex-col gap-1.5">
+            {overdue.map((item) => (
+              <UpcomingRow key={item.id} item={item} today={today} onOpenTask={onOpenTask} showDate />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {days.length === 0 ? (
+        <EmptyState
+          compact
+          icon={<CalendarIcon size={20} />}
+          title="دو هفته آینده خالی است"
+          description="مهلت یا رویدادی در این بازه ثبت نشده است."
+        />
+      ) : (
+        days.map((day) => (
+          <section key={day.date} aria-label={relativeDay(day.date)} className="flex flex-col gap-2">
+            <h3 className="numeric text-caption font-semibold text-fg-secondary">{relativeDay(day.date)}</h3>
+            <ul className="flex flex-col gap-1.5">
+              {day.items.map((item) => (
+                <UpcomingRow key={item.id} item={item} today={today} onOpenTask={onOpenTask} />
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
+    </aside>
+  );
+}
+
+interface UpcomingRowProps {
+  readonly item: CalendarItem;
+  readonly today: Date;
+  readonly onOpenTask: (taskId: string) => void;
+  readonly showDate?: boolean;
+}
+
+function UpcomingRow({ item, today, onOpenTask, showDate = false }: UpcomingRowProps) {
+  const meta = [itemKindLabel(item), itemTimeLabel(item), showDate ? formatJalali(item.date, 'day-month') : null]
+    .filter(Boolean)
+    .join('، ');
+  const content = (
+    <>
+      <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', itemTone(item, today))}>
+        <ItemIcon item={item} size={15} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-body-sm font-semibold text-fg-primary">{itemTitle(item)}</span>
+        <span className="numeric truncate text-micro text-fg-tertiary">{meta}</span>
+      </span>
+    </>
+  );
+
+  const className =
+    'flex w-full items-center gap-3 rounded-xl border border-secondary bg-surface p-2.5 text-start shadow-xs transition-colors';
+
+  return (
+    <li>
+      {item.kind === 'deadline' ? (
+        <button type="button" onClick={() => onOpenTask(item.task.id)} className={cn(className, 'hover:border-brand')}>
+          {content}
+        </button>
+      ) : (
+        <div className={className}>{content}</div>
+      )}
+    </li>
   );
 }

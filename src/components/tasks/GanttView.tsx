@@ -34,6 +34,7 @@ const BAR_TONE: Readonly<Record<Task['status'], string>> = {
 };
 
 const WINDOW_DAYS = 28;
+const GRID_TEMPLATE = `14rem repeat(${WINDOW_DAYS}, minmax(1.75rem, 1fr))`;
 
 /**
  * Jalali Gantt.
@@ -43,6 +44,12 @@ const WINDOW_DAYS = 28;
  * coordinate mirroring is needed, only `gridColumnStart` / `gridColumnEnd`.
  *
  * Thursday and Friday (Jalali weekday indices 5 and 6) are shaded as the Iranian weekend.
+ *
+ * Layering, bottom to top, so bars glide *under* the titles when the timeline scrolls:
+ *   z-0   day grid lines and weekend/today shading
+ *   z-10  task duration bars
+ *   z-20  the task name/code column — `sticky start-0` (the right edge in RTL), opaque
+ *   z-30  the calendar header — `sticky top-0`, above everything as rows scroll under it
  */
 export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps) {
   const [windowStart, setWindowStart] = useState(() => {
@@ -148,10 +155,11 @@ export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps)
         <div className="min-w-[60rem]">
           {/* Header row: day numbers + weekday initials */}
           <div
-            className="sticky top-0 z-sticky grid border-b border-secondary bg-surface"
-            style={{ gridTemplateColumns: `14rem repeat(${WINDOW_DAYS}, minmax(1.75rem, 1fr))` }}
+            className="sticky top-0 z-30 grid border-b border-secondary bg-surface"
+            style={{ gridTemplateColumns: GRID_TEMPLATE }}
           >
-            <div className="border-e border-secondary px-3 py-2 text-title-sm font-semibold text-fg-secondary">
+            {/* Corner cell: pinned on both axes, opaque over the day cells it covers. */}
+            <div className="sticky start-0 z-10 border-e border-secondary bg-surface px-3 py-2 text-title-sm font-semibold text-fg-secondary">
               وظیفه
             </div>
             {days.map((day) => (
@@ -181,17 +189,28 @@ export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps)
             {rows.map(({ task, column, span, clippedStart, clippedEnd }) => {
               const assignees = usersByIds(task.assigneeIds);
               const project = projectById(task.projectId);
+              const selected = selectedTaskId === task.id;
 
               return (
                 <li
                   key={task.id}
                   className={cn(
-                    'grid items-center border-b border-tertiary transition-colors hover:bg-hover',
-                    selectedTaskId === task.id && 'bg-brand-subtle',
+                    'group/row grid items-center border-b border-tertiary transition-colors hover:bg-hover',
+                    selected && 'bg-brand-subtle',
                   )}
-                  style={{ gridTemplateColumns: `14rem repeat(${WINDOW_DAYS}, minmax(1.75rem, 1fr))` }}
+                  style={{ gridTemplateColumns: GRID_TEMPLATE }}
                 >
-                  <div className="flex min-w-0 items-center gap-2 border-e border-secondary px-3 py-2">
+                  {/*
+                    Opaque (never transparent) so a bar scrolled beneath it is fully hidden; it
+                    repaints the row's hover/selected tint itself for the same reason.
+                  */}
+                  <div
+                    className={cn(
+                      'sticky start-0 z-20 flex h-full min-w-0 items-center gap-2 border-e border-secondary px-3 py-2 transition-colors',
+                      selected ? 'bg-brand-subtle' : 'bg-surface group-hover/row:bg-hover',
+                    )}
+                    style={{ gridRow: 1, gridColumn: 1 }}
+                  >
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-caption font-semibold text-fg-primary">{task.title}</span>
                       <span className="numeric truncate text-micro text-fg-tertiary">
@@ -207,7 +226,7 @@ export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps)
                       key={`${task.id}-${day.iso}`}
                       aria-hidden="true"
                       className={cn(
-                        'h-10 border-e border-tertiary/60',
+                        'relative z-0 h-10 border-e border-tertiary/60',
                         day.isWeekend && 'bg-sunken/70',
                         day.isToday && 'bg-brand-subtle/60',
                       )}
@@ -221,7 +240,9 @@ export function GanttView({ tasks, onOpenTask, selectedTaskId }: GanttViewProps)
                     aria-label={`${task.title} — از ${formatJalali(task.startDate, 'medium')} تا ${formatJalali(task.dueDate, 'medium')}`}
                     style={{ gridRow: 1, gridColumnStart: column + 1, gridColumnEnd: `span ${span}` }}
                     className={cn(
-                      'relative z-10 mx-0.5 flex h-6 items-center gap-1.5 px-2 text-micro font-semibold text-white transition-transform hover:scale-[1.02]',
+                      // Dark mode lifts status fills to light tints, so the label flips to ink
+                      // to keep AA contrast on every bar.
+                      'relative z-10 mx-0.5 flex h-6 items-center gap-1.5 px-2 text-micro font-semibold text-white transition-transform hover:scale-[1.02] dark:text-gray-950',
                       BAR_TONE[task.status],
                       // A clipped edge stays square so it reads as "continues beyond the window".
                       !clippedStart && 'rounded-s-full',

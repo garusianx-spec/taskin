@@ -1,52 +1,56 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { TaskDraft, TaskPriority, TaskStatus } from '@/types';
-import { TASK_PRIORITIES, TASK_STATUSES } from '@/data/reference';
+import type { BoardColumn, TaskDraft, TaskPriority } from '@/types';
+import { TASK_PRIORITIES } from '@/data/reference';
 import { PROJECTS, USERS } from '@/data/workspace';
 import { formatFileSize } from '@/lib/format';
-import { toISODate } from '@/lib/jalali';
-import { Avatar, Badge, Button, Checkbox, Input, Modal, Select, Textarea } from '@/components/ui';
+import { formatJalali, toISODate } from '@/lib/jalali';
+import { taskDraft } from '@/store/drafts';
+import { Avatar, Badge, Button, Checkbox, IconButton, Input, Modal, Select, Textarea } from '@/components/ui';
 import { JalaliDatePicker } from './JalaliDatePicker';
-import { ConvertToTaskIcon, FlagIcon, PaperclipIcon, TaskSquareIcon } from '@/components/icons';
+import { ColumnDot } from './ColumnDot';
+import {
+  CloseIcon,
+  ConvertToTaskIcon,
+  FlagIcon,
+  NotebookIcon,
+  PaperclipIcon,
+  SubtaskIcon,
+  TaskSquareIcon,
+} from '@/components/icons';
 
 export interface CreateTaskModalProps {
   readonly open: boolean;
   readonly draft: TaskDraft | null;
+  /** Board columns, custom ones included, offered as the task's starting column. */
+  readonly columns: readonly BoardColumn[];
   readonly onClose: () => void;
   readonly onSubmit: (draft: TaskDraft) => void;
 }
 
 const today = (): string => toISODate(new Date());
 
-const BLANK_DRAFT: TaskDraft = {
-  title: '',
-  description: '',
-  projectId: PROJECTS[0]?.id ?? '',
-  status: 'todo',
-  priority: 'medium',
-  assigneeIds: [],
-  dueDate: null,
-  sourceMessageId: null,
-  attachments: [],
-};
-
 /**
- * Task composer. Opened blank from the sidebar/board, or pre-filled from a chat message via
- * "تبدیل به وظیفه" — in which case the source message and any attachment ride along.
+ * Task composer. Opened blank from the rail, sidebar or board; pre-dated from a calendar
+ * cell; or pre-filled from a chat message ("تبدیل به وظیفه") or a note ("تبدیل یادداشت به
+ * وظیفه") — in which case the source, attachments and checklist items ride along.
  */
-export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskModalProps) {
-  const [form, setForm] = useState<TaskDraft>(BLANK_DRAFT);
+export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: CreateTaskModalProps) {
+  const [form, setForm] = useState<TaskDraft>(() => taskDraft());
   const [touched, setTouched] = useState(false);
 
-  // Re-seed whenever the modal opens so a chat-sourced draft replaces the previous form.
+  // Re-seed whenever the modal opens so a sourced draft replaces the previous form.
   useEffect(() => {
     if (!open) return;
-    setForm(draft ?? { ...BLANK_DRAFT, dueDate: today() });
+    setForm(draft ? { ...draft, dueDate: draft.dueDate ?? today() } : taskDraft({ dueDate: today() }));
     setTouched(false);
   }, [open, draft]);
 
   const fromMessage = form.sourceMessageId !== null;
+  const fromNote = form.sourceNoteId !== null;
+  const columnValue = form.boardColumnId ?? form.status;
+  const presetDate = draft !== null && draft.dueDate !== null && !fromMessage && !fromNote;
   const titleError = touched && form.title.trim().length === 0 ? 'عنوان وظیفه الزامی است.' : undefined;
 
   const submit = () => {
@@ -60,19 +64,33 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
       open={open}
       onClose={onClose}
       size="md"
-      title={fromMessage ? 'تبدیل پیام به وظیفه' : 'تعریف وظیفه جدید'}
+      title={fromMessage ? 'تبدیل پیام به وظیفه' : fromNote ? 'تبدیل یادداشت به وظیفه' : 'تعریف وظیفه جدید'}
       description={
         fromMessage
           ? 'متن و پیوست پیام انتخاب‌شده به‌صورت خودکار در فرم قرار گرفت. جزئیات را تکمیل کنید.'
-          : 'وظیفه را در یکی از پروژه‌های سازمان ثبت کنید.'
+          : fromNote
+            ? 'عنوان و متن یادداشت در فرم قرار گرفت و موارد چک‌لیست به زیروظیفه تبدیل می‌شوند.'
+            : presetDate && form.dueDate
+              ? `مهلت انجام روی ${formatJalali(form.dueDate, 'long')} تنظیم شده است.`
+              : 'وظیفه را در یکی از پروژه‌های سازمان ثبت کنید.'
       }
-      icon={fromMessage ? <ConvertToTaskIcon size={20} /> : <TaskSquareIcon size={20} />}
+      icon={
+        fromMessage ? (
+          <ConvertToTaskIcon size={20} />
+        ) : fromNote ? (
+          <NotebookIcon size={20} />
+        ) : (
+          <TaskSquareIcon size={20} />
+        )
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             انصراف
           </Button>
-          <Button onClick={submit}>{fromMessage ? 'ایجاد وظیفه از پیام' : 'ایجاد وظیفه'}</Button>
+          <Button onClick={submit}>
+            {fromMessage ? 'ایجاد وظیفه از پیام' : fromNote ? 'ایجاد وظیفه از یادداشت' : 'ایجاد وظیفه'}
+          </Button>
         </>
       }
     >
@@ -84,7 +102,7 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
           onBlur={() => setTouched(true)}
           placeholder="مثلاً: بازبینی جریان ورود کاربران"
           error={titleError}
-          autoFocus
+          data-autofocus
         />
 
         <Textarea
@@ -109,11 +127,24 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
           />
 
           <Select
-            label="وضعیت اولیه"
+            label="ستون بورد"
             hideLabel={false}
-            value={form.status}
-            onValueChange={(status: TaskStatus) => setForm((current) => ({ ...current, status }))}
-            options={TASK_STATUSES.map((entry) => ({ value: entry.id, label: entry.label }))}
+            value={columnValue}
+            onValueChange={(columnId) => {
+              const column = columns.find((entry) => entry.id === columnId);
+              if (!column) return;
+              setForm((current) => ({
+                ...current,
+                status: column.status,
+                boardColumnId: column.custom ? column.id : null,
+              }));
+            }}
+            options={columns.map((column) => ({
+              value: column.id,
+              label: column.title,
+              icon: <ColumnDot column={column} />,
+              ...(column.custom ? { description: 'ستون سفارشی' } : {}),
+            }))}
           />
 
           <Select
@@ -146,7 +177,7 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
               return (
                 <label
                   key={user.id}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-secondary px-2.5 py-2 transition-colors hover:bg-hover has-[:checked]:border-brand"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-secondary px-2.5 py-2 transition-colors hover:bg-hover has-[[aria-checked=true]]:border-brand"
                 >
                   <Checkbox
                     checked={checked}
@@ -180,6 +211,34 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
           </div>
         </fieldset>
 
+        {form.subtaskTitles.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="text-body-sm font-medium text-fg-secondary">زیروظیفه‌ها از چک‌لیست یادداشت</span>
+            <ul className="flex flex-col gap-1.5">
+              {form.subtaskTitles.map((title, index) => (
+                <li
+                  key={`${index}-${title}`}
+                  className="flex items-center gap-2.5 rounded-lg border border-secondary bg-sunken p-2"
+                >
+                  <SubtaskIcon size={16} className="shrink-0 text-fg-quaternary" />
+                  <span className="flex-1 truncate text-caption font-medium text-fg-primary">{title}</span>
+                  <IconButton
+                    label={`حذف «${title}» از زیروظیفه‌ها`}
+                    icon={<CloseIcon size={14} />}
+                    size="xs"
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        subtaskTitles: current.subtaskTitles.filter((_, position) => position !== index),
+                      }))
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {form.attachments.length > 0 && (
           <div className="flex flex-col gap-2">
             <span className="text-body-sm font-medium text-fg-secondary">پیوست‌های منتقل‌شده</span>
@@ -205,6 +264,11 @@ export function CreateTaskModal({ open, draft, onClose, onSubmit }: CreateTaskMo
         {fromMessage && (
           <Badge tone="brand" size="md" iconStart={<ConvertToTaskIcon size={13} />}>
             این وظیفه به پیام مبدأ در گفتگو پیوند داده می‌شود.
+          </Badge>
+        )}
+        {fromNote && (
+          <Badge tone="brand" size="md" iconStart={<NotebookIcon size={13} />}>
+            این وظیفه به یادداشت مبدأ پیوند داده می‌شود.
           </Badge>
         )}
       </div>

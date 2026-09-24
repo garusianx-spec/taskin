@@ -8,6 +8,7 @@ import { priorityLabel, priorityTone } from '@/data/reference';
 import { projectById, subtaskProgress, usersByIds } from '@/store/selectors';
 import { AvatarStack, Badge, ProgressBar } from '@/components/ui';
 import { CalendarIcon, FlagIcon, PaperclipIcon, StarFilledIcon, SubtaskIcon } from '@/components/icons';
+import { TaskCompleteCheckbox, completedTitleClass } from './TaskCompleteCheckbox';
 
 export interface TaskCardProps {
   readonly task: Task;
@@ -20,15 +21,33 @@ export interface TaskCardProps {
     readonly onDragEnd: () => void;
   };
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
+  /** Quick-complete checkbox beside the title. Omitted, the card renders without it. */
+  readonly onToggleComplete?: (completed: boolean) => void;
+  /** Id of the element that explains the card's keyboard contract. */
+  readonly describedBy?: string;
 }
 
 /**
  * Board card. Shows priority, Jalali deadline, assignee stack, checklist progress and the
  * attachment count — the five signals a project manager scans a column for.
+ *
+ * The card is a focusable group rather than a `button`: it contains its own quick-complete
+ * checkbox, and interactive content may not nest inside a button. Enter opens it and Space
+ * picks it up for keyboard moves, as described by `describedBy`.
  */
-export function TaskCard({ task, onOpen, selected = false, grabbed = false, dragHandlers, onKeyDown }: TaskCardProps) {
+export function TaskCard({
+  task,
+  onOpen,
+  selected = false,
+  grabbed = false,
+  dragHandlers,
+  onKeyDown,
+  onToggleComplete,
+  describedBy,
+}: TaskCardProps) {
+  const done = task.status === 'done';
   const progress = subtaskProgress(task);
-  const deadline = describeDeadline(task.dueDate, new Date(), task.status === 'done');
+  const deadline = describeDeadline(task.dueDate, new Date(), done);
   const assignees = usersByIds(task.assigneeIds);
   const project = projectById(task.projectId);
 
@@ -39,10 +58,11 @@ export function TaskCard({ task, onOpen, selected = false, grabbed = false, drag
       onDragEnd={dragHandlers?.onDragEnd}
       onKeyDown={onKeyDown}
       tabIndex={0}
-      role="button"
+      role="group"
       aria-roledescription="کارت وظیفه"
       aria-grabbed={grabbed || undefined}
-      aria-label={`${task.title} — ${deadline.text}`}
+      aria-label={`${task.title} — ${done ? 'انجام شد' : deadline.text}`}
+      aria-describedby={describedBy}
       onClick={() => onOpen(task.id)}
       onKeyUp={(event) => {
         if (event.key === 'Enter') onOpen(task.id);
@@ -64,7 +84,19 @@ export function TaskCard({ task, onOpen, selected = false, grabbed = false, drag
         </span>
       </div>
 
-      <h4 className="line-clamp-2 text-body-sm font-semibold leading-6 text-fg-primary">{task.title}</h4>
+      <div className="flex items-start gap-2">
+        {onToggleComplete && (
+          <TaskCompleteCheckbox task={task} onToggle={onToggleComplete} className="mt-1" />
+        )}
+        <h4
+          className={cn(
+            'line-clamp-2 text-body-sm font-semibold leading-6 transition-[color,opacity]',
+            done ? completedTitleClass : 'text-fg-primary',
+          )}
+        >
+          {task.title}
+        </h4>
+      </div>
 
       {project && (
         <span className="truncate text-micro text-fg-tertiary">{project.name}</span>

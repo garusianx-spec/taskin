@@ -5,21 +5,20 @@ import { MODULES } from '@/data/reference';
 import { WORKSPACE, WORKSPACES } from '@/data/workspace';
 import { formatCount } from '@/lib/format';
 import { useWorkspace } from '@/store/WorkspaceProvider';
+import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { CountPill, IconButton, Popover } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
+import { QuickCreateMenu } from './QuickCreateMenu';
 import { AddIcon, ChevronDownIcon, NotificationIcon, SearchIcon } from '@/components/icons';
 
-export interface TopAppBarProps {
-  readonly onSearch: () => void;
-}
-
 /**
- * Mobile top bar: workspace badge + switcher, global search and the notification bell.
- * Replaced by `NavRail` from `lg` upward.
+ * Mobile top bar: workspace badge + switcher, quick create, global search and the
+ * notification bell. Replaced by `NavRail` from `lg` upward.
  */
-export function TopAppBar({ onSearch }: TopAppBarProps) {
+export function TopAppBar() {
   const pathname = usePathname();
-  const { totalUnread } = useWorkspace();
+  const { unreadNotifications } = useWorkspace();
+  const { active, open } = useOverlays();
   const activeModule = MODULES.find((module) => pathname.startsWith(module.href));
 
   return (
@@ -73,12 +72,33 @@ export function TopAppBar({ onSearch }: TopAppBarProps) {
 
       <div className="flex-1" />
 
-      <IconButton label="جستجوی سراسری" icon={<SearchIcon size={20} />} onClick={onSearch} />
+      <Popover
+        label="ایجاد سریع"
+        haspopup="menu"
+        trigger={<IconButton label="ایجاد سریع" icon={<AddIcon size={20} />} />}
+      >
+        {(close) => <QuickCreateMenu close={close} />}
+      </Popover>
+      <IconButton
+        label="جستجوی سراسری"
+        icon={<SearchIcon size={20} />}
+        onClick={() => open({ kind: 'global-search' })}
+      />
       <span className="relative inline-flex">
-        <IconButton label="اعلان‌ها" icon={<NotificationIcon size={20} />} />
-        {totalUnread > 0 && (
+        <IconButton
+          label={
+            unreadNotifications > 0
+              ? `اعلان‌ها — ${formatCount(unreadNotifications)} خوانده‌نشده`
+              : 'اعلان‌ها'
+          }
+          icon={<NotificationIcon size={20} />}
+          aria-haspopup="dialog"
+          aria-expanded={active?.kind === 'notifications'}
+          onClick={() => open({ kind: 'notifications' })}
+        />
+        {unreadNotifications > 0 && (
           <CountPill
-            value={formatCount(totalUnread)}
+            value={formatCount(unreadNotifications)}
             tone="error"
             className="pointer-events-none absolute -top-1 -end-1 ring-2 ring-surface"
           />

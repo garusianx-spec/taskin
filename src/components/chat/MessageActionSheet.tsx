@@ -55,7 +55,7 @@ export function MessageActionSheet({
         <MenuItem
           icon={<ConvertToTaskIcon size={20} />}
           onSelect={() => onConvertToTask(message)}
-          className="bg-brand-subtle py-3 text-body font-semibold text-fg-brand hover:bg-brand-100"
+          className="bg-brand-subtle py-3 text-body font-semibold text-fg-brand hover:bg-brand-subtle-hover"
         >
           تبدیل مستقیم به وظیفه
         </MenuItem>

@@ -345,8 +345,20 @@ export function toISODate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Parses a `YYYY-MM-DD` date as *local* midnight. `new Date('2025-03-21')` is UTC midnight,
+ * which is still the previous day anywhere west of Greenwich.
+ */
+export function fromISODate(iso: string): Date {
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) {
+    throw new RangeError(`Invalid ISO date: ${iso}`);
+  }
+  return new Date(year, month - 1, day);
+}
+
 export function addDays(iso: string, days: number): string {
-  const date = parseISODate(iso);
+  const date = fromISODate(iso);
   date.setDate(date.getDate() + days);
   return toISODate(date);
 }

@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { conversationById, filterConversations } from '@/store/selectors';
 import { PROJECTS } from '@/data/workspace';
-import { AppShell, useShellActions } from '@/components/layout/AppShell';
+import { AppShell } from '@/components/layout/AppShell';
+import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { ChatView } from '@/components/chat/ChatView';
 import { EmptyState } from '@/components/ui';
@@ -18,6 +19,7 @@ export default function ChatsPage() {
 
 function ChatsShell() {
   const { state, dispatch, currentUser, conversations, unreadFor, isPinned, totalUnread } = useWorkspace();
+  const { open } = useOverlays();
   // Mobile: the sidebar is the list screen until a conversation is opened.
   const [mobileDetail, setMobileDetail] = useState(false);
 
@@ -32,7 +34,7 @@ function ChatsShell() {
     [conversations, state.messages, state.chatFilter, state.chatSearch, state.unreadByConversation, state.pinnedConversationIds],
   );
 
-  const active = conversationById(state.activeConversationId);
+  const active = conversationById(conversations, state.activeConversationId);
   const defaultProjectId = PROJECTS[0]?.id ?? '';
 
   return (
@@ -51,6 +53,7 @@ function ChatsShell() {
           onFilterChange={(filter) => dispatch({ type: 'set-chat-filter', filter })}
           onSearchChange={(query) => dispatch({ type: 'set-chat-search', query })}
           onTogglePin={(conversationId) => dispatch({ type: 'toggle-conversation-pin', conversationId })}
+          onNewConversation={() => open({ kind: 'conversation-composer' })}
           onSelect={(conversationId) => {
             dispatch({ type: 'select-conversation', conversationId });
             setMobileDetail(true);
@@ -84,8 +87,8 @@ interface ChatContentProps {
 /** Split out so the composer hook resolves inside the `AppShell` provider. */
 function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentProps) {
   const { state, dispatch } = useWorkspace();
-  const { openTaskComposer } = useShellActions();
-  const conversation = conversationById(state.activeConversationId);
+  const { openTaskComposer } = useOverlays();
+  const conversation = conversationById(state.conversations, state.activeConversationId);
 
   if (!conversation) return null;
 

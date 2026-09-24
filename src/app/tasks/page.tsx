@@ -4,9 +4,11 @@ import { useMemo, useState } from 'react';
 import type { Task, TaskViewMode } from '@/types';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { filterTasks } from '@/store/selectors';
+import { taskDraft } from '@/store/drafts';
 import { formatJalali } from '@/lib/jalali';
 import { formatCount } from '@/lib/format';
-import { AppShell, useShellActions } from '@/components/layout/AppShell';
+import { AppShell } from '@/components/layout/AppShell';
+import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { TaskSidebar } from '@/components/tasks/TaskSidebar';
 import { KanbanBoard } from '@/components/tasks/KanbanBoard';
 import { TaskListView } from '@/components/tasks/TaskListView';
@@ -65,7 +67,7 @@ function TaskSidebarContainer({
   readonly onNavigate: () => void;
 }) {
   const { state, dispatch } = useWorkspace();
-  const { openTaskComposer } = useShellActions();
+  const { openTaskComposer } = useOverlays();
 
   return (
     <TaskSidebar
@@ -100,11 +102,15 @@ interface TaskWorkspaceProps {
 
 function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskWorkspaceProps) {
   const { state, dispatch } = useWorkspace();
-  const { openTaskComposer } = useShellActions();
+  const { openTaskComposer } = useOverlays();
   const [postponeTarget, setPostponeTarget] = useState<Task | null>(null);
 
   const selectedTaskId = state.inspector.kind === 'task' ? state.inspector.taskId : null;
   const openTask = (taskId: string) => dispatch({ type: 'open-task', taskId });
+  const toggleComplete = (taskId: string, completed: boolean) =>
+    dispatch({ type: 'set-task-completed', taskId, completed });
+  const openTasks = tasks.filter((task) => task.status !== 'done');
+  const completedTasks = tasks.filter((task) => task.status === 'done');
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -153,27 +159,33 @@ function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskW
         {view === 'board' && (
           <KanbanBoard
             tasks={tasks}
+            columns={state.boardColumns}
             selectedTaskId={selectedTaskId}
             onOpenTask={openTask}
-            onMoveTask={(taskId, status) => dispatch({ type: 'move-task', taskId, status })}
-            onCreateTask={(status) =>
-              openTaskComposer({
-                title: '',
-                description: '',
-                projectId: state.projectFilterId ?? tasks[0]?.projectId ?? '',
-                status,
-                priority: 'medium',
-                assigneeIds: [],
-                dueDate: null,
-                sourceMessageId: null,
-                attachments: [],
-              })
+            onMoveTask={(taskId, columnId) => dispatch({ type: 'move-task-to-column', taskId, columnId })}
+            onToggleComplete={toggleComplete}
+            onCreateTask={(column) =>
+              openTaskComposer(
+                taskDraft({
+                  projectId: state.projectFilterId ?? tasks[0]?.projectId ?? taskDraft().projectId,
+                  status: column.status,
+                  boardColumnId: column.custom ? column.id : null,
+                }),
+              )
             }
+            onAddColumn={(title, tone) => dispatch({ type: 'add-board-column', title, tone })}
+            onRemoveColumn={(columnId) => dispatch({ type: 'remove-board-column', columnId })}
             onAnnounce={(message) => dispatch({ type: 'announce', message })}
           />
         )}
         {view === 'list' && (
-          <TaskListView tasks={tasks} onOpenTask={openTask} selectedTaskId={selectedTaskId} />
+          <TaskListView
+            tasks={tasks}
+            columns={state.boardColumns}
+            onOpenTask={openTask}
+            onToggleComplete={toggleComplete}
+            selectedTaskId={selectedTaskId}
+          />
         )}
         {view === 'gantt' && (
           <GanttView tasks={tasks} onOpenTask={openTask} selectedTaskId={selectedTaskId} />
@@ -204,19 +216,40 @@ function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskW
               </Badge>
             </p>
             <ul className="flex flex-col gap-2.5">
-              {tasks.map((task) => (
+              {openTasks.map((task) => (
                 <SwipeableTaskRow
                   key={task.id}
                   task={task}
                   onOpen={openTask}
-                  onComplete={(taskId) => {
-                    dispatch({ type: 'move-task', taskId, status: 'done' });
-                    dispatch({ type: 'announce', message: `وظیفه «${task.title}» انجام شد.` });
-                  }}
+                  onToggleComplete={toggleComplete}
                   onPostpone={setPostponeTarget}
                 />
               ))}
             </ul>
+            {completedTasks.length > 0 && (
+              <section aria-labelledby="mobile-completed" className="mt-5">
+                <h2
+                  id="mobile-completed"
+                  className="mb-2 flex items-center gap-2 px-1 text-caption font-semibold text-fg-secondary"
+                >
+                  انجام‌شده
+                  <Badge tone="done" size="sm" numeric>
+                    {formatCount(completedTasks.length)}
+                  </Badge>
+                </h2>
+                <ul className="flex flex-col gap-2.5">
+                  {completedTasks.map((task) => (
+                    <SwipeableTaskRow
+                      key={task.id}
+                      task={task}
+                      onOpen={openTask}
+                      onToggleComplete={toggleComplete}
+                      onPostpone={setPostponeTarget}
+                    />
+                  ))}
+                </ul>
+              </section>
+            )}
           </>
         )}
       </div>

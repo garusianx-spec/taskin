@@ -10,14 +10,9 @@ import {
   type ReactNode,
 } from 'react';
 import type { Conversation, User } from '@/types';
-import {
-  CONVERSATIONS,
-  CURRENT_USER,
-  MESSAGES,
-  TASKS,
-} from '@/data/workspace';
-import { DEFAULT_PERMISSION_MATRIX } from '@/data/reference';
+import { CURRENT_USER } from '@/data/workspace';
 import { workspaceReducer, type WorkspaceAction, type WorkspaceState } from './workspace-reducer';
+import { INITIAL_WORKSPACE_STATE } from './initial-state';
 
 interface WorkspaceContextValue {
   readonly state: WorkspaceState;
@@ -29,29 +24,10 @@ interface WorkspaceContextValue {
   readonly isPinned: (conversationId: string) => boolean;
   readonly isMuted: (conversationId: string) => boolean;
   readonly totalUnread: number;
+  readonly unreadNotifications: number;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
-
-const initialState: WorkspaceState = {
-  tasks: TASKS,
-  messages: MESSAGES,
-  permissions: DEFAULT_PERMISSION_MATRIX,
-  pinnedConversationIds: CONVERSATIONS.filter((conversation) => conversation.pinned).map((c) => c.id),
-  mutedConversationIds: CONVERSATIONS.filter((conversation) => conversation.muted).map((c) => c.id),
-  unreadByConversation: Object.fromEntries(
-    CONVERSATIONS.map((conversation) => [conversation.id, conversation.unreadCount]),
-  ),
-  activeConversationId: CONVERSATIONS[0]?.id ?? '',
-  inspector: { kind: 'none' },
-  taskView: 'board',
-  chatFilter: 'all',
-  smartView: 'all',
-  projectFilterId: null,
-  chatSearch: '',
-  taskSearch: '',
-  announcement: '',
-};
 
 /**
  * Single stateful container for the workspace. Every presentation component below this point
@@ -61,7 +37,7 @@ const initialState: WorkspaceState = {
  * feeding the same reducer); the reducer contract would not change.
  */
 export function WorkspaceProvider({ children }: { readonly children: ReactNode }) {
-  const [state, dispatch] = useReducer(workspaceReducer, initialState);
+  const [state, dispatch] = useReducer(workspaceReducer, INITIAL_WORKSPACE_STATE);
 
   const unreadFor = useCallback(
     (conversationId: string) => state.unreadByConversation[conversationId] ?? 0,
@@ -83,18 +59,31 @@ export function WorkspaceProvider({ children }: { readonly children: ReactNode }
     [state.unreadByConversation],
   );
 
+  const unreadNotifications = useMemo(
+    () => state.notifications.filter((notification) => !notification.read).length,
+    [state.notifications],
+  );
+
+  // Presence is the one identity field the member edits themselves (profile modal); name,
+  // email and title come from the organisation directory.
+  const currentUser = useMemo<User>(
+    () => ({ ...CURRENT_USER, presence: state.profile.presence }),
+    [state.profile.presence],
+  );
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       state,
       dispatch,
-      currentUser: CURRENT_USER,
-      conversations: CONVERSATIONS,
+      currentUser,
+      conversations: state.conversations,
       unreadFor,
       isPinned,
       isMuted,
       totalUnread,
+      unreadNotifications,
     }),
-    [state, unreadFor, isPinned, isMuted, totalUnread],
+    [state, currentUser, unreadFor, isPinned, isMuted, totalUnread, unreadNotifications],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

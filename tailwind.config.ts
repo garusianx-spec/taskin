@@ -11,6 +11,14 @@ const withAlpha = (variable: string) => `rgb(var(${variable}) / <alpha-value>)`;
 const ramp = (name: string, steps: readonly string[]) =>
   Object.fromEntries(steps.map((step) => [step, withAlpha(`--${name}-${step}`)]));
 
+/** `bg-tag-red`, `bg-tag-red-subtle`, `text-tag-red-ink`, `border-tag-red-line`. */
+const tag = (tone: string) => ({
+  DEFAULT: withAlpha(`--tag-${tone}`),
+  subtle: withAlpha(`--tag-${tone}-bg`),
+  ink: withAlpha(`--tag-${tone}-fg`),
+  line: withAlpha(`--tag-${tone}-border`),
+});
+
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   darkMode: ['class', '[data-theme="dark"]'],
@@ -35,7 +43,9 @@ const config: Config = {
         muted: withAlpha('--bg-disabled'),
         overlay: withAlpha('--bg-overlay'),
         'brand-subtle': withAlpha('--bg-brand-subtle'),
+        'brand-subtle-hover': withAlpha('--bg-brand-subtle-hover'),
         'brand-solid': withAlpha('--bg-brand-solid'),
+        'brand-solid-hover': withAlpha('--bg-brand-solid-hover'),
 
         /* Foreground — read as `text-fg-primary`, `fill-fg-tertiary`, … */
         fg: {
@@ -57,6 +67,11 @@ const config: Config = {
           todo: { DEFAULT: withAlpha('--status-todo'), subtle: withAlpha('--status-todo-bg'), line: withAlpha('--status-todo-border') },
           review: { DEFAULT: withAlpha('--status-review'), subtle: withAlpha('--status-review-bg'), line: withAlpha('--status-review-border') },
         },
+
+        /* Fixed tag tones for custom board columns and note colour tags. */
+        tag: Object.fromEntries(
+          ['gray', 'blue', 'teal', 'green', 'amber', 'red', 'pink', 'violet'].map((tone) => [tone, tag(tone)]),
+        ),
       },
       /* Border utilities get their own aliases so `border-primary` means "the primary
          border token", not "the primary colour ramp". */
@@ -130,6 +145,12 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateX(-1.5rem)' },
           to: { opacity: '1', transform: 'translateX(0)' },
         },
+        /* Physical, because a panel anchored to the inline-start edge in RTL enters from
+           the right; LTR uses `slide-in-start`. */
+        'slide-in-right': {
+          from: { opacity: '0', transform: 'translateX(1.5rem)' },
+          to: { opacity: '1', transform: 'translateX(0)' },
+        },
         'slide-up': {
           from: { transform: 'translateY(100%)' },
           to: { transform: 'translateY(0)' },
@@ -143,6 +164,7 @@ const config: Config = {
         'fade-in': 'fade-in 150ms ease-out',
         'scale-in': 'scale-in 140ms cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-in-start': 'slide-in-start 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-in-right': 'slide-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-up': 'slide-up 260ms cubic-bezier(0.16, 1, 0.3, 1)',
         'pulse-ring': 'pulse-ring 1.6s ease-in-out infinite',
       },
