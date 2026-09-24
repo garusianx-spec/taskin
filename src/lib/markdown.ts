@@ -33,7 +33,7 @@ export type InlineToken =
   | { readonly kind: 'code'; readonly text: string };
 
 const HEADING = /^(#{1,3})\s+(.*)$/;
-const CHECKLIST = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
+export const CHECKLIST = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
 const BULLET = /^\s*[-*]\s+(.*)$/;
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
 const QUOTE = /^>\s?(.*)$/;

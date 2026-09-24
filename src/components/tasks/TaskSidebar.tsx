@@ -6,14 +6,11 @@ import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { DEPARTMENTS } from '@/data/reference';
 import { buildProjectTree, projectWithDescendants } from '@/store/selectors';
-import { Button, Input } from '@/components/ui';
 import {
-  AddIcon,
   BriefcaseIcon,
   ChevronDownIcon,
   ClockIcon,
   FolderIcon,
-  SearchIcon,
   StarIcon,
   TaskSquareIcon,
   UserIcon,
@@ -23,12 +20,9 @@ export interface TaskSidebarProps {
   readonly tasks: readonly Task[];
   readonly smartView: SmartViewId;
   readonly projectFilterId: string | null;
-  readonly search: string;
   readonly currentUserId: string;
   readonly onSmartViewChange: (view: SmartViewId) => void;
   readonly onProjectChange: (projectId: string | null) => void;
-  readonly onSearchChange: (query: string) => void;
-  readonly onCreateTask: () => void;
 }
 
 const SMART_VIEWS: ReadonlyArray<{
@@ -42,17 +36,17 @@ const SMART_VIEWS: ReadonlyArray<{
   { id: 'all', label: 'همه وظایف', Icon: TaskSquareIcon },
 ];
 
-/** Task-context column: smart views, the project tree and department filters. */
+/**
+ * Task-context column: smart views, the project tree and department filters. Search and the
+ * primary "new task" action live in the workspace header, so they are not repeated here.
+ */
 export function TaskSidebar({
   tasks,
   smartView,
   projectFilterId,
-  search,
   currentUserId,
   onSmartViewChange,
   onProjectChange,
-  onSearchChange,
-  onCreateTask,
 }: TaskSidebarProps) {
   const tree = buildProjectTree();
   const [expanded, setExpanded] = useState<readonly string[]>(tree.map((node) => node.project.id));
@@ -91,22 +85,8 @@ export function TaskSidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-col gap-3 border-b border-secondary p-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-title font-bold text-fg-primary">پروژه‌ها و وظایف</h2>
-        </div>
-        <Button fullWidth iconStart={<AddIcon size={18} />} onClick={onCreateTask}>
-          تعریف وظیفه جدید
-        </Button>
-        <Input
-          label="جستجوی وظیفه"
-          hideLabel
-          type="search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="جستجوی عنوان یا کد وظیفه…"
-          iconStart={<SearchIcon size={18} />}
-        />
+      <div className="border-b border-secondary px-3 py-3.5">
+        <h2 className="text-title font-bold text-fg-primary">پروژه‌ها و وظایف</h2>
       </div>
 
       <div className="scrollbar-thin flex-1 overflow-y-auto p-2">

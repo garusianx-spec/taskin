@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { WORKSPACE } from '@/data/workspace';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { Button } from '@/components/ui';
+import { WorkspaceAvatar } from '@/components/workspace/WorkspaceAvatar';
 import { CheckCircleIcon, LogoutIcon } from '@/components/icons';
 
 /**
@@ -12,7 +12,7 @@ import { CheckCircleIcon, LogoutIcon } from '@/components/icons';
  */
 export default function SignedOutPage() {
   const router = useRouter();
-  const { state, dispatch } = useWorkspace();
+  const { state, dispatch, activeWorkspace } = useWorkspace();
   const signedOut = state.session === 'signed-out';
 
   return (
@@ -21,17 +21,15 @@ export default function SignedOutPage() {
         aria-labelledby="signed-out-title"
         className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-secondary bg-surface p-6 text-center shadow-lg"
       >
-        <span className="flex size-14 items-center justify-center rounded-2xl bg-brand-solid text-title font-bold text-fg-on-brand shadow-xs">
-          {WORKSPACE.initials}
-        </span>
+        <WorkspaceAvatar workspace={activeWorkspace} size="lg" className="shadow-xs" />
         <div className="flex flex-col gap-1.5">
           <h1 id="signed-out-title" className="text-heading-sm font-bold text-fg-primary">
             {signedOut ? 'از حساب خود خارج شدید' : 'شما وارد حساب هستید'}
           </h1>
           <p className="text-body-sm text-fg-tertiary">
             {signedOut
-              ? `نشست شما در ${WORKSPACE.name} پایان یافت و اطلاعات آن از این مرورگر پاک شد.`
-              : `نشست شما در ${WORKSPACE.name} هنوز فعال است.`}
+              ? 'نشست شما در تسکین پایان یافت و اطلاعات همه فضاهای کاری از این مرورگر پاک شد.'
+              : `نشست شما در ${activeWorkspace.name} هنوز فعال است.`}
           </p>
         </div>
         <span

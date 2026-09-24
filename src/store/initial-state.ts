@@ -1,5 +1,6 @@
 import type { WorkspaceState } from './workspace-reducer';
 import {
+  ACTIVITY,
   CALENDAR_EVENTS,
   CONVERSATIONS,
   CURRENT_USER,
@@ -9,9 +10,11 @@ import {
   NOTES,
   NOTIFICATIONS,
   PASSWORD_CHANGED_AT,
+  PRIMARY_WORKSPACE_ID,
   TASKS,
+  WORKSPACES,
 } from '@/data/workspace';
-import { BUILT_IN_COLUMNS, DEFAULT_PERMISSION_MATRIX } from '@/data/reference';
+import { BUILT_IN_COLUMNS, BUILT_IN_NOTE_CATEGORIES, DEFAULT_PERMISSION_MATRIX } from '@/data/reference';
 
 /**
  * The state a fresh session starts from. Kept apart from the provider so the reducer can
@@ -19,13 +22,20 @@ import { BUILT_IN_COLUMNS, DEFAULT_PERMISSION_MATRIX } from '@/data/reference';
  */
 export const INITIAL_WORKSPACE_STATE: WorkspaceState = {
   session: 'active',
+  workspaces: WORKSPACES,
+  activeWorkspaceId: PRIMARY_WORKSPACE_ID,
+  // The other seeded workspaces have not been worked in yet; they open empty.
+  parkedWorkspaces: {},
+  activity: ACTIVITY,
   tasks: TASKS,
+  archivedTasks: [],
   boardColumns: BUILT_IN_COLUMNS,
   conversations: CONVERSATIONS,
   messages: MESSAGES,
   calendarEvents: CALENDAR_EVENTS,
   calendarFocusDate: null,
   notes: NOTES,
+  noteCategories: BUILT_IN_NOTE_CATEGORIES,
   notifications: NOTIFICATIONS,
   invitations: INVITATIONS,
   loginSessions: LOGIN_SESSIONS,

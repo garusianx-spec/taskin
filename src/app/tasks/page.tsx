@@ -15,7 +15,7 @@ import { TaskListView } from '@/components/tasks/TaskListView';
 import { GanttView } from '@/components/tasks/GanttView';
 import { SwipeableTaskRow } from '@/components/tasks/SwipeableTaskRow';
 import { PostponeSheet } from '@/components/tasks/PostponeSheet';
-import { Badge, Button, EmptyState, SegmentedControl } from '@/components/ui';
+import { Badge, Button, EmptyState, ExpandableSearch, SegmentedControl } from '@/components/ui';
 import { AddIcon, FilterIcon, GanttIcon, KanbanIcon, ListIcon, TaskSquareIcon } from '@/components/icons';
 
 export default function TasksPage() {
@@ -67,14 +67,12 @@ function TaskSidebarContainer({
   readonly onNavigate: () => void;
 }) {
   const { state, dispatch } = useWorkspace();
-  const { openTaskComposer } = useOverlays();
 
   return (
     <TaskSidebar
       tasks={tasks}
       smartView={state.smartView}
       projectFilterId={state.projectFilterId}
-      search={state.taskSearch}
       currentUserId={currentUserId}
       onSmartViewChange={(view) => {
         dispatch({ type: 'set-smart-view', view });
@@ -83,11 +81,6 @@ function TaskSidebarContainer({
       onProjectChange={(projectId) => {
         dispatch({ type: 'set-project-filter', projectId });
         onNavigate();
-      }}
-      onSearchChange={(query) => dispatch({ type: 'set-task-search', query })}
-      onCreateTask={() => {
-        onNavigate();
-        openTaskComposer(null);
       }}
     />
   );
@@ -144,8 +137,15 @@ function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskW
               { value: 'gantt', label: 'گانت', icon: <GanttIcon size={16} /> },
             ]}
           />
+          <ExpandableSearch
+            label="جستجوی وظیفه"
+            placeholder="عنوان، کد یا برچسب…"
+            value={state.taskSearch}
+            onChange={(query) => dispatch({ type: 'set-task-search', query })}
+          />
           <Button
             iconStart={<AddIcon size={18} />}
+            aria-keyshortcuts="N"
             onClick={() => openTaskComposer(null)}
             className="hidden sm:inline-flex"
           >
@@ -159,6 +159,7 @@ function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskW
         {view === 'board' && (
           <KanbanBoard
             tasks={tasks}
+            allTasks={state.tasks}
             columns={state.boardColumns}
             selectedTaskId={selectedTaskId}
             onOpenTask={openTask}
@@ -174,7 +175,10 @@ function TaskWorkspace({ tasks, view, onViewChange, onOpenMobileFilters }: TaskW
               )
             }
             onAddColumn={(title, tone) => dispatch({ type: 'add-board-column', title, tone })}
-            onRemoveColumn={(columnId) => dispatch({ type: 'remove-board-column', columnId })}
+            onRenameColumn={(columnId, title) => dispatch({ type: 'rename-board-column', columnId, title })}
+            onRemoveColumn={(columnId, disposition) =>
+              dispatch({ type: 'remove-board-column', columnId, disposition })
+            }
             onAnnounce={(message) => dispatch({ type: 'announce', message })}
           />
         )}

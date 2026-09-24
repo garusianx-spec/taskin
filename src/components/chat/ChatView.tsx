@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useIsomorphicLayoutEffect } from '@/hooks/useIsomorphicLayoutEffect';
 import type { Conversation, Message, TaskDraft } from '@/types';
 import { cn } from '@/lib/cn';
-import { formatDateDivider } from '@/lib/jalali';
+import { formatDateDivider, fromISODate } from '@/lib/jalali';
 import { formatCount, truncate } from '@/lib/format';
 import {
   conversationMessages,
@@ -24,7 +25,6 @@ import {
   HashIcon,
   InfoCircleIcon,
   MessagesIcon,
-  PaperclipIcon,
   SearchIcon,
 } from '@/components/icons';
 
@@ -62,7 +62,10 @@ export function ChatView({
   const [inChatQuery, setInChatQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [sheetMessage, setSheetMessage] = useState<Message | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  /** What was on screen last render, to tell "opened a thread" from "a message arrived". */
+  const rendered = useRef<{ readonly conversationId: string; readonly count: number } | null>(null);
 
   const thread = useMemo(
     () => conversationMessages(messages, conversation.id),
@@ -78,8 +81,20 @@ export function ChatView({
   const groups = useMemo(() => groupMessagesByDay(visibleThread), [visibleThread]);
   const members = useMemo(() => usersByIds(conversation.memberIds), [conversation.memberIds]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
+  // Layout effect, so the jump happens before paint: opening a thread lands on its newest
+  // message with no visible scroll from the top. A message added to the open thread (sent
+  // or received — both are appended to the tail) glides into view instead.
+  useIsomorphicLayoutEffect(() => {
+    const previous = rendered.current;
+    rendered.current = { conversationId: conversation.id, count: thread.length };
+    const container = scrollRef.current;
+    if (!container) return;
+
+    if (previous === null || previous.conversationId !== conversation.id) {
+      container.scrollTop = container.scrollHeight;
+    } else if (thread.length > previous.count) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
   }, [conversation.id, thread.length]);
 
   const replyTarget = replyToId ? messageById(messages, replyToId) : undefined;
@@ -103,8 +118,6 @@ export function ChatView({
       attachments: message.body.kind === 'file' ? [message.body.attachment] : [],
     });
 
-  const attachmentCount = thread.filter((message) => message.body.kind === 'file').length;
-
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col bg-canvas" aria-label={`گفتگوی ${conversation.title}`}>
       <header className="flex shrink-0 flex-col gap-2 border-b border-secondary bg-surface px-3 py-2.5 sm:px-4">
@@ -119,9 +132,12 @@ export function ChatView({
             />
           )}
 
+          {/* The title is the way into the details drawer (members, shared content, settings). */}
           <button
             type="button"
             onClick={onOpenDetails}
+            aria-haspopup="dialog"
+            aria-label={`${conversation.title} — نمایش جزئیات گفتگو`}
             className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-start transition-colors hover:bg-hover"
           >
             {conversation.kind === 'channel' ? (
@@ -151,14 +167,6 @@ export function ChatView({
                 setSearchOpen((open) => !open);
                 if (searchOpen) setInChatQuery('');
               }}
-            />
-          </Tooltip>
-          <Tooltip content="فایل‌های گفتگو">
-            <IconButton
-              label={`کشوی فایل‌ها (${attachmentCount} فایل)`}
-              icon={<PaperclipIcon size={20} />}
-              size="sm"
-              onClick={onOpenDetails}
             />
           </Tooltip>
           <Tooltip content="جزئیات گفتگو">
@@ -193,7 +201,7 @@ export function ChatView({
         )}
       </header>
 
-      <div className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4 sm:px-6">
+      <div ref={scrollRef} className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4 sm:px-6">
         {groups.length === 0 ? (
           <EmptyState
             icon={<MessagesIcon size={26} />}
@@ -242,7 +250,8 @@ export function ChatView({
                 })}
               </div>
             ))}
-            <div ref={bottomRef} />
+            {/* scroll-margin covers the scroller's bottom padding, so the newest message lands flush. */}
+            <div ref={bottomRef} aria-hidden="true" className="scroll-mb-4" />
           </div>
         )}
       </div>
@@ -277,12 +286,16 @@ export function ChatView({
   );
 }
 
+/**
+ * Day separator. An in-flow block (`relative`, never `sticky`), so it scrolls away with the
+ * messages of its day instead of hovering over the bubbles beneath it.
+ */
 function DateDivider({ iso }: { readonly iso: string }) {
   return (
-    <div className="sticky top-0 z-sticky flex items-center gap-3 py-3">
+    <div role="separator" aria-label={formatDateDivider(fromISODate(iso))} className="relative flex items-center gap-3 py-3">
       <span className="h-px flex-1 bg-gray-200" aria-hidden="true" />
       <span className="rounded-full border border-secondary bg-surface px-3 py-1 text-micro font-semibold text-fg-tertiary shadow-xs">
-        {formatDateDivider(iso)}
+        {formatDateDivider(fromISODate(iso))}
       </span>
       <span className="h-px flex-1 bg-gray-200" aria-hidden="true" />
     </div>

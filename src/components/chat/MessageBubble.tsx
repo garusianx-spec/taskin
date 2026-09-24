@@ -3,36 +3,26 @@
 import { useRef, useState } from 'react';
 import type { Attachment, Message, User } from '@/types';
 import { cn } from '@/lib/cn';
+import { QUICK_REACTIONS } from '@/data/reference';
+import { downloadAttachment } from '@/lib/download';
 import { formatTime } from '@/lib/jalali';
-import { formatFileSize } from '@/lib/format';
+import { formatCount, formatFileSize } from '@/lib/format';
 import { Avatar, Badge, IconButton, Popover, Tooltip } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { VoicePlayer } from './VoicePlayer';
 import {
-  ArchiveIcon,
   ConvertToTaskIcon,
   CopyIcon,
-  DocumentIcon,
   DoubleCheckIcon,
   DownloadIcon,
   EmojiIcon,
-  ImageIcon,
   MoreHorizontalIcon,
   ReplyIcon,
-  SheetIcon,
   TaskSquareIcon,
+  ATTACHMENT_ICONS,
 } from '@/components/icons';
 
-const ATTACHMENT_ICONS = {
-  image: ImageIcon,
-  document: DocumentIcon,
-  sheet: SheetIcon,
-  archive: ArchiveIcon,
-  audio: DocumentIcon,
-  link: DocumentIcon,
-} as const;
 
-const QUICK_REACTIONS = ['👍', '🙏', '🔥', '✅', '👀'] as const;
 
 export interface MessageBubbleProps {
   readonly message: Message;
@@ -210,26 +200,37 @@ export function MessageBubble({
               align={outgoing ? 'start' : 'end'}
               open={menuOpen}
               onOpenChange={setMenuOpen}
-              panelClassName="min-w-52"
+              panelClassName="min-w-64"
               trigger={<IconButton label="اقدام‌های بیشتر" icon={<MoreHorizontalIcon size={16} />} size="xs" />}
             >
               {(close) => (
                 <MenuList>
-                  <div className="flex gap-1 px-1 pb-1.5">
-                    {QUICK_REACTIONS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        aria-label={`واکنش ${emoji}`}
-                        onClick={() => {
-                          onToggleReaction(message.id, emoji);
-                          close();
-                        }}
-                        className="flex size-8 items-center justify-center rounded-lg text-title transition-colors hover:bg-hover"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                  <div role="group" aria-label="واکنش سریع" className="grid grid-cols-7 gap-0.5 px-0.5 pb-1.5">
+                    {QUICK_REACTIONS.map(({ emoji, label }) => {
+                      const mine = message.reactions.some(
+                        (reaction) => reaction.emoji === emoji && reaction.userIds.includes(currentUserId),
+                      );
+                      return (
+                        <button
+                          key={emoji}
+                          type="button"
+                          aria-label={`واکنش ${label}`}
+                          aria-pressed={mine}
+                          title={label}
+                          onClick={() => {
+                            onToggleReaction(message.id, emoji);
+                            close();
+                          }}
+                          className={cn(
+                            'flex aspect-square items-center justify-center rounded-lg text-title leading-none',
+                            'transition-[transform,background-color] duration-150 hover:scale-110 hover:bg-hover motion-reduce:hover:scale-100',
+                            mine && 'bg-brand-subtle ring-1 ring-inset ring-brand',
+                          )}
+                        >
+                          <span aria-hidden="true">{emoji}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                   <MenuItem
                     icon={<ConvertToTaskIcon size={18} />}
@@ -285,16 +286,16 @@ export function MessageBubble({
                   type="button"
                   onClick={() => onToggleReaction(message.id, reaction.emoji)}
                   aria-pressed={mine}
-                  aria-label={`${reaction.emoji} — ${reaction.userIds.length} نفر`}
+                  aria-label={`${reaction.emoji} — ${formatCount(reaction.userIds.length)} نفر`}
                   className={cn(
-                    'numeric inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-micro transition-colors',
+                    'numeric inline-flex animate-scale-in items-center gap-1 rounded-full border px-1.5 py-0.5 text-micro transition-colors',
                     mine
                       ? 'border-brand bg-brand-subtle text-fg-brand'
                       : 'border-secondary bg-surface text-fg-tertiary hover:bg-hover',
                   )}
                 >
                   <span aria-hidden="true">{reaction.emoji}</span>
-                  {reaction.userIds.length}
+                  {formatCount(reaction.userIds.length)}
                 </button>
               );
             })}
@@ -351,6 +352,7 @@ function FileCard({ attachment, caption, outgoing }: FileCardProps) {
           label={`دانلود ${attachment.name}`}
           icon={<DownloadIcon size={16} />}
           size="xs"
+          onClick={() => downloadAttachment(attachment)}
           className={outgoing ? 'text-fg-on-brand hover:bg-white/20' : undefined}
         />
       </div>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { BoardColumn, TagTone, Task } from '@/types';
+import type { ColumnDisposition } from '@/store/workspace-reducer';
 import { TAG_TONES, statusLabel } from '@/data/reference';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
@@ -9,20 +10,25 @@ import { TAG_DOT, TAG_STRIPE } from '@/lib/tag-tone';
 import { columnForTask, tasksInColumn } from '@/store/selectors';
 import { useNamespacedId } from '@/hooks/useId';
 import { useRovingFocus } from '@/hooks/useRovingFocus';
-import { Badge, Button, EmptyState, IconButton, Input, Tooltip } from '@/components/ui';
+import { Badge, Button, EmptyState, IconButton, Input, Modal, Popover, Select, Tooltip } from '@/components/ui';
+import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { TaskCard } from './TaskCard';
 import { ColumnDot } from './ColumnDot';
-import { AddIcon, CheckIcon, TaskSquareIcon, TrashIcon } from '@/components/icons';
+import { AddIcon, ArchiveIcon, CheckIcon, EditIcon, MoreHorizontalIcon, TaskSquareIcon, TrashIcon } from '@/components/icons';
 
 export interface KanbanBoardProps {
+  /** The cards to show — already narrowed by the sidebar's filters and the header search. */
   readonly tasks: readonly Task[];
+  /** Every task, unfiltered: deleting a column must account for cards the filters hide. */
+  readonly allTasks: readonly Task[];
   readonly columns: readonly BoardColumn[];
   readonly onOpenTask: (taskId: string) => void;
   readonly onMoveTask: (taskId: string, columnId: string) => void;
   readonly onToggleComplete: (taskId: string, completed: boolean) => void;
   readonly onCreateTask: (column: BoardColumn) => void;
   readonly onAddColumn: (title: string, tone: TagTone) => void;
-  readonly onRemoveColumn: (columnId: string) => void;
+  readonly onRenameColumn: (columnId: string, title: string) => void;
+  readonly onRemoveColumn: (columnId: string, disposition: ColumnDisposition) => void;
   readonly selectedTaskId: string | null;
   readonly onAnnounce: (message: string) => void;
 }
@@ -36,16 +42,20 @@ export interface KanbanBoardProps {
  *    announced through the shell's live region, so the operation is fully non-visual.
  *
  * Columns come from workspace state: the four built-ins plus any the team adds from the
- * dashed "افزودن ستون جدید" card at the board's far (inline-end) edge.
+ * dashed "افزودن ستون جدید" card at the board's far (inline-end) edge. Every column — built-in
+ * or custom — can be renamed or deleted from its ⋯ menu; deleting one that still holds cards
+ * asks whether to migrate them to another column or archive them.
  */
 export function KanbanBoard({
   tasks,
+  allTasks,
   columns,
   onOpenTask,
   onMoveTask,
   onToggleComplete,
   onCreateTask,
   onAddColumn,
+  onRenameColumn,
   onRemoveColumn,
   selectedTaskId,
   onAnnounce,
@@ -53,19 +63,41 @@ export function KanbanBoard({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [grabbedId, setGrabbedId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<BoardColumn | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const columnRefs = useRef<Map<string, HTMLElement>>(new Map());
   const knownColumns = useRef<readonly string[]>(columns.map((column) => column.id));
   const hintId = useNamespacedId('kanban-hint-');
 
-  // Bring a freshly added column into view; it lands at the scrolled-away end of the board.
+  /**
+   * Smooth-scrolls to the board's far end, where new columns appear. In RTL that is the left
+   * edge, which browsers address with a *negative* `scrollLeft`.
+   */
+  const revealBoardEnd = useCallback(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const overflow = board.scrollWidth - board.clientWidth;
+    const rtl = getComputedStyle(board).direction === 'rtl';
+    board.scrollTo({ left: rtl ? -overflow : overflow, behavior: 'smooth' });
+  }, []);
+
+  // A column just added sits next to the add card at the far end; keep that end in view.
   useEffect(() => {
-    const added = columns.find((column) => !knownColumns.current.includes(column.id));
+    const added = columns.some((column) => !knownColumns.current.includes(column.id));
     knownColumns.current = columns.map((column) => column.id);
-    if (added) {
-      columnRefs.current.get(added.id)?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    if (added) requestAnimationFrame(revealBoardEnd);
+  }, [columns, revealBoardEnd]);
+
+  const columnLoad = (column: BoardColumn): number => tasksInColumn(allTasks, columns, column).length;
+
+  const requestDelete = (column: BoardColumn) => {
+    if (columnLoad(column) === 0) {
+      onRemoveColumn(column.id, { kind: 'archive' });
+    } else {
+      setDeleting(column);
     }
-  }, [columns]);
+  };
 
   const commitMove = useCallback(
     (taskId: string, column: BoardColumn, viaKeyboard: boolean) => {
@@ -127,6 +159,7 @@ export function KanbanBoard({
 
   return (
     <div
+      ref={boardRef}
       className="scrollbar-thin flex h-full min-h-0 gap-4 overflow-x-auto p-4"
       role="application"
       aria-label="بورد کانبان وظایف"
@@ -136,16 +169,12 @@ export function KanbanBoard({
       </p>
 
       {columns.map((column) => {
-        const columnTasks = tasksInColumn(tasks, column);
+        const columnTasks = tasksInColumn(tasks, columns, column);
         const isDropTarget = dropTarget === column.id;
 
         return (
           <section
             key={column.id}
-            ref={(node) => {
-              if (node) columnRefs.current.set(column.id, node);
-              else columnRefs.current.delete(column.id);
-            }}
             aria-label={`ستون ${column.title}`}
             onDragOver={(event) => {
               event.preventDefault();
@@ -169,34 +198,21 @@ export function KanbanBoard({
               column.tone && cn('border-t-[3px]', TAG_STRIPE[column.tone]),
             )}
           >
-            <header className="flex items-center gap-2 px-3 py-3">
-              <ColumnDot column={column} />
-              <h3 className="truncate text-title-sm font-semibold text-fg-primary">{column.title}</h3>
-              <Badge tone="neutral" size="sm" numeric>
-                {formatCount(columnTasks.length)}
-              </Badge>
-              <span className="ms-auto flex items-center gap-0.5">
-                {column.custom && (
-                  <Tooltip content="حذف ستون؛ کارت‌ها به «در حال انجام» برمی‌گردند">
-                    <IconButton
-                      label={`حذف ستون ${column.title}`}
-                      icon={<TrashIcon size={15} />}
-                      size="xs"
-                      className="hover:text-status-blocked"
-                      onClick={() => onRemoveColumn(column.id)}
-                    />
-                  </Tooltip>
-                )}
-                <Tooltip content={`افزودن وظیفه به ${column.title}`}>
-                  <IconButton
-                    label={`افزودن وظیفه به ${column.title}`}
-                    icon={<AddIcon size={16} />}
-                    size="xs"
-                    onClick={() => onCreateTask(column)}
-                  />
-                </Tooltip>
-              </span>
-            </header>
+            <ColumnHeader
+              column={column}
+              count={columnTasks.length}
+              renaming={renamingId === column.id}
+              canDelete={columns.length > 1}
+              existingTitles={columns.filter((entry) => entry.id !== column.id).map((entry) => entry.title)}
+              onStartRename={() => setRenamingId(column.id)}
+              onRename={(title) => {
+                onRenameColumn(column.id, title);
+                setRenamingId(null);
+              }}
+              onCancelRename={() => setRenamingId(null)}
+              onDelete={() => requestDelete(column)}
+              onCreateTask={() => onCreateTask(column)}
+            />
 
             <div className="scrollbar-thin flex min-h-24 flex-1 flex-col gap-2.5 overflow-y-auto px-2.5 pb-3">
               {columnTasks.length === 0 ? (
@@ -248,27 +264,314 @@ export function KanbanBoard({
         );
       })}
 
-      <AddColumnCard existingTitles={columns.map((column) => column.title)} onAdd={onAddColumn} />
+      <AddColumnCard
+        existingTitles={columns.map((column) => column.title)}
+        onAdd={onAddColumn}
+        onOpen={revealBoardEnd}
+      />
+
+      <DeleteColumnDialog
+        column={deleting}
+        columns={columns}
+        load={deleting ? columnLoad(deleting) : 0}
+        onClose={() => setDeleting(null)}
+        onConfirm={(disposition) => {
+          if (deleting) onRemoveColumn(deleting.id, disposition);
+          setDeleting(null);
+        }}
+      />
     </div>
+  );
+}
+
+interface ColumnHeaderProps {
+  readonly column: BoardColumn;
+  readonly count: number;
+  readonly renaming: boolean;
+  readonly canDelete: boolean;
+  readonly existingTitles: readonly string[];
+  readonly onStartRename: () => void;
+  readonly onRename: (title: string) => void;
+  readonly onCancelRename: () => void;
+  readonly onDelete: () => void;
+  readonly onCreateTask: () => void;
+}
+
+/** Column title row: colour key, name (inline-editable), count, add-task and the ⋯ menu. */
+function ColumnHeader({
+  column,
+  count,
+  renaming,
+  canDelete,
+  existingTitles,
+  onStartRename,
+  onRename,
+  onCancelRename,
+  onDelete,
+  onCreateTask,
+}: ColumnHeaderProps) {
+  const [draft, setDraft] = useState(column.title);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!renaming) return;
+    setDraft(column.title);
+    setError(undefined);
+  }, [renaming, column.title]);
+
+  const commit = () => {
+    const title = draft.trim();
+    if (!title) return setError('نام ستون را وارد کنید.');
+    if (existingTitles.some((existing) => existing.trim() === title)) return setError('ستونی با این نام وجود دارد.');
+    onRename(title);
+    requestAnimationFrame(() => menuTriggerRef.current?.focus());
+  };
+
+  const cancel = () => {
+    onCancelRename();
+    requestAnimationFrame(() => menuTriggerRef.current?.focus());
+  };
+
+  if (renaming) {
+    return (
+      <form
+        className="flex flex-col gap-1 px-3 py-2.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          commit();
+        }}
+      >
+        <Input
+          label={`نام تازه ستون ${column.title}`}
+          hideLabel
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setError(undefined);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              cancel();
+            }
+          }}
+          onBlur={(event) => {
+            // Leaving the field by clicking elsewhere saves, unless focus moved to the
+            // form's own buttons.
+            if (!event.currentTarget.form?.contains(event.relatedTarget)) commit();
+          }}
+          error={error}
+          maxLength={32}
+          autoFocus
+          className="h-8 text-body-sm"
+        />
+      </form>
+    );
+  }
+
+  return (
+    <header className="flex items-center gap-2 px-3 py-3">
+      <ColumnDot column={column} />
+      <h3 className="truncate text-title-sm font-semibold text-fg-primary">{column.title}</h3>
+      <Badge tone="neutral" size="sm" numeric>
+        {formatCount(count)}
+      </Badge>
+      <span className="ms-auto flex items-center gap-0.5">
+        <Tooltip content={`افزودن وظیفه به ${column.title}`}>
+          <IconButton
+            label={`افزودن وظیفه به ${column.title}`}
+            icon={<AddIcon size={16} />}
+            size="xs"
+            onClick={onCreateTask}
+          />
+        </Tooltip>
+        <Popover
+          label={`اقدام‌های ستون ${column.title}`}
+          haspopup="menu"
+          align="end"
+          panelClassName="min-w-48"
+          trigger={
+            <IconButton
+              ref={menuTriggerRef}
+              label={`اقدام‌های ستون ${column.title}`}
+              icon={<MoreHorizontalIcon size={16} />}
+              size="xs"
+            />
+          }
+        >
+          {(close) => (
+            <MenuList>
+              <MenuItem
+                icon={<EditIcon size={16} />}
+                onSelect={() => {
+                  close();
+                  onStartRename();
+                }}
+              >
+                تغییر نام ستون
+              </MenuItem>
+              <MenuItem
+                icon={<TrashIcon size={16} />}
+                tone="danger"
+                disabled={!canDelete}
+                onSelect={() => {
+                  close();
+                  onDelete();
+                }}
+              >
+                {canDelete ? 'حذف ستون' : 'حذف ستون (آخرین ستون بورد)'}
+              </MenuItem>
+            </MenuList>
+          )}
+        </Popover>
+      </span>
+    </header>
+  );
+}
+
+interface DeleteColumnDialogProps {
+  readonly column: BoardColumn | null;
+  readonly columns: readonly BoardColumn[];
+  /** Cards in the column across the whole workspace, not only the filtered view. */
+  readonly load: number;
+  readonly onClose: () => void;
+  readonly onConfirm: (disposition: ColumnDisposition) => void;
+}
+
+/** Confirms deleting a column that still holds cards: migrate them elsewhere, or archive them. */
+function DeleteColumnDialog({ column, columns, load, onClose, onConfirm }: DeleteColumnDialogProps) {
+  const others = columns.filter((entry) => entry.id !== column?.id);
+  const [choice, setChoice] = useState<'migrate' | 'archive'>('migrate');
+  const [targetId, setTargetId] = useState('');
+  const id = useNamespacedId('delete-column-');
+
+  useEffect(() => {
+    if (!column) return;
+    setChoice('migrate');
+    // Default to a column that keeps the cards' status (a custom column's cards are in
+    // progress), so migrating never silently completes or reopens work; else a neighbour.
+    const index = columns.findIndex((entry) => entry.id === column.id);
+    const sameStatus = columns.find((entry) => entry.id !== column.id && entry.status === column.status);
+    setTargetId((sameStatus ?? columns[index - 1] ?? columns[index + 1])?.id ?? '');
+  }, [column, columns]);
+
+  const options = [
+    {
+      value: 'migrate' as const,
+      title: 'انتقال به ستون دیگر',
+      description: 'کارت‌ها با همان وضعیت ستون مقصد ادامه پیدا می‌کنند.',
+      Icon: TaskSquareIcon,
+    },
+    {
+      value: 'archive' as const,
+      title: 'بایگانی وظایف',
+      description: 'کارت‌ها از بورد، فهرست و گانت کنار می‌روند.',
+      Icon: ArchiveIcon,
+    },
+  ];
+
+  return (
+    <Modal
+      open={column !== null}
+      onClose={onClose}
+      size="sm"
+      title={column ? `حذف ستون «${column.title}»` : ''}
+      description={`این ستون ${formatCount(load)} وظیفه دارد. پیش از حذف مشخص کنید چه بر سر آن‌ها بیاید.`}
+      icon={<TrashIcon size={20} />}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            انصراف
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={choice === 'migrate' && !targetId}
+            onClick={() => onConfirm(choice === 'migrate' ? { kind: 'migrate', targetColumnId: targetId } : { kind: 'archive' })}
+          >
+            {choice === 'migrate' ? 'انتقال و حذف ستون' : 'بایگانی و حذف ستون'}
+          </Button>
+        </>
+      }
+    >
+      <fieldset className="flex flex-col gap-2">
+        <legend className="sr-only">سرنوشت وظایف این ستون</legend>
+        {options.map(({ value, title, description, Icon }) => (
+          <label
+            key={value}
+            className={cn(
+              'flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors',
+              choice === value ? 'border-brand bg-brand-subtle' : 'border-secondary hover:bg-hover',
+            )}
+          >
+            <input
+              type="radio"
+              name={`${id}-choice`}
+              value={value}
+              checked={choice === value}
+              onChange={() => setChoice(value)}
+              className="mt-1 size-4 shrink-0"
+            />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex items-center gap-1.5 text-body-sm font-semibold text-fg-primary">
+                <Icon size={16} className="text-fg-tertiary" />
+                {title}
+              </span>
+              <span className="text-caption text-fg-tertiary">{description}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {choice === 'migrate' && (
+        <div className="mt-4">
+          <Select
+            label="ستون مقصد"
+            hideLabel={false}
+            value={targetId}
+            onValueChange={setTargetId}
+            options={others.map((entry) => ({
+              value: entry.id,
+              label: entry.title,
+              icon: <ColumnDot column={entry} />,
+            }))}
+          />
+        </div>
+      )}
+    </Modal>
   );
 }
 
 interface AddColumnCardProps {
   readonly existingTitles: readonly string[];
   readonly onAdd: (title: string, tone: TagTone) => void;
+  /** Scrolls the board so the column being drafted is fully in view. */
+  readonly onOpen: () => void;
 }
 
 /**
- * Dashed "+ افزودن ستون جدید" card. Collapsed it is a single button; activated it becomes an
- * inline form — column name plus an accent colour — that appends the column on submit.
+ * Dashed "+ افزودن ستون جدید" card. Collapsed it is a single button; activated it spawns a
+ * column-shaped draft — name plus an accent colour — at the board's far end, scrolls it into
+ * view and puts the caret in its name field. Submitting appends the column.
  */
-function AddColumnCard({ existingTitles, onAdd }: AddColumnCardProps) {
+function AddColumnCard({ existingTitles, onAdd, onOpen }: AddColumnCardProps) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [tone, setTone] = useState<TagTone>('blue');
   const [error, setError] = useState<string | undefined>(undefined);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const nameRef = useRef<HTMLInputElement | null>(null);
   const id = useNamespacedId('add-column-');
+
+  useEffect(() => {
+    if (!editing) return;
+    // Scroll first, then focus without letting the browser jump-scroll instead.
+    const frame = requestAnimationFrame(() => {
+      onOpen();
+      nameRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editing, onOpen]);
   const { registerItem, onKeyDown } = useRovingFocus(TAG_TONES.length, 'horizontal', {
     onActivate: (index) => {
       const entry = TAG_TONES[index];
@@ -329,12 +632,13 @@ function AddColumnCard({ existingTitles, onAdd }: AddColumnCardProps) {
         }
       }}
       aria-labelledby={`${id}-title`}
-      className="flex w-72 shrink-0 animate-scale-in flex-col gap-3 self-start rounded-2xl border-2 border-dashed border-brand bg-surface p-3 shadow-xs"
+      className="flex w-72 shrink-0 animate-scale-in flex-col gap-3 rounded-2xl border-2 border-dashed border-brand bg-surface p-3 shadow-xs"
     >
       <h3 id={`${id}-title`} className="text-title-sm font-semibold text-fg-primary">
         ستون جدید
       </h3>
       <Input
+        ref={nameRef}
         label="نام ستون"
         value={title}
         onChange={(event) => {
@@ -344,7 +648,6 @@ function AddColumnCard({ existingTitles, onAdd }: AddColumnCardProps) {
         placeholder="مثلاً: تست کیفیت"
         error={error}
         maxLength={32}
-        autoFocus
       />
       <fieldset className="flex flex-col gap-1.5">
         <legend className="mb-1.5 text-body-sm font-medium text-fg-secondary">رنگ شاخص</legend>

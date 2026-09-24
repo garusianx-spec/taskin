@@ -7,6 +7,7 @@ import { PROJECTS, USERS } from '@/data/workspace';
 import { formatFileSize } from '@/lib/format';
 import { formatJalali, toISODate } from '@/lib/jalali';
 import { taskDraft } from '@/store/drafts';
+import { columnForPlacement } from '@/store/selectors';
 import { Avatar, Badge, Button, Checkbox, IconButton, Input, Modal, Select, Textarea } from '@/components/ui';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { ColumnDot } from './ColumnDot';
@@ -49,7 +50,7 @@ export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: Cre
 
   const fromMessage = form.sourceMessageId !== null;
   const fromNote = form.sourceNoteId !== null;
-  const columnValue = form.boardColumnId ?? form.status;
+  const columnValue = columnForPlacement(columns, form)?.id ?? '';
   const presetDate = draft !== null && draft.dueDate !== null && !fromMessage && !fromNote;
   const titleError = touched && form.title.trim().length === 0 ? 'عنوان وظیفه الزامی است.' : undefined;
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { conversationById, taskById } from '@/store/selectors';
 import { NavRail } from './NavRail';
@@ -32,6 +32,7 @@ export interface AppShellProps {
  */
 export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { state, dispatch, currentUser, isPinned, isMuted } = useWorkspace();
   const signedOut = state.session === 'signed-out';
 
@@ -41,8 +42,10 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
 
   const inspectorTask =
     state.inspector.kind === 'task' ? taskById(state.tasks, state.inspector.taskId) : undefined;
+  // Conversation details belong to the chat they describe: they dock on /chats only, and
+  // reappear there if they were open when the member left.
   const inspectorConversation =
-    state.inspector.kind === 'conversation'
+    state.inspector.kind === 'conversation' && pathname.startsWith('/chats')
       ? conversationById(state.conversations, state.inspector.conversationId)
       : undefined;
   const inspectorOpen = Boolean(inspectorTask ?? inspectorConversation);

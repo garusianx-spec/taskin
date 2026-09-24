@@ -6,12 +6,13 @@ import type {
   Conversation,
   Message,
   Note,
-  NotebookId,
+  NoteCategory,
   NotificationFilterId,
   Project,
   SmartViewId,
   TagTone,
   Task,
+  TaskPlacement,
   TaskStatus,
   User,
 } from '@/types';
@@ -112,19 +113,34 @@ export const isOverdue = (task: Task, now: Date = new Date()): boolean =>
 
 /* ------------------------------ Board ------------------------------ */
 
-/** The column a card renders in: its custom column if it has one, else its status column. */
-export function columnForTask(columns: readonly BoardColumn[], task: Task): BoardColumn | undefined {
-  if (task.boardColumnId !== null) {
-    const custom = columns.find((column) => column.id === task.boardColumnId);
-    if (custom) return custom;
+/**
+ * The column a placement resolves to: the custom column it names; else the first column
+ * carrying its status (the built-in one, even if renamed); and, when the team has deleted
+ * every column for that status, the first column on the board — so a card is never homeless.
+ */
+export function columnForPlacement(
+  columns: readonly BoardColumn[],
+  placement: TaskPlacement,
+): BoardColumn | undefined {
+  if (placement.boardColumnId !== null) {
+    const named = columns.find((column) => column.id === placement.boardColumnId);
+    if (named) return named;
   }
-  return columns.find((column) => !column.custom && column.status === task.status);
+  return (
+    columns.find((column) => !column.custom && column.status === placement.status) ??
+    columns.find((column) => column.status === placement.status) ??
+    columns[0]
+  );
 }
 
-export const tasksInColumn = (tasks: readonly Task[], column: BoardColumn): readonly Task[] =>
-  column.custom
-    ? tasks.filter((task) => task.boardColumnId === column.id)
-    : tasks.filter((task) => task.boardColumnId === null && task.status === column.status);
+export const columnForTask = (columns: readonly BoardColumn[], task: Task): BoardColumn | undefined =>
+  columnForPlacement(columns, task);
+
+export const tasksInColumn = (
+  tasks: readonly Task[],
+  columns: readonly BoardColumn[],
+  column: BoardColumn,
+): readonly Task[] => tasks.filter((task) => columnForTask(columns, task)?.id === column.id);
 
 /* ------------------------------ Calendar ------------------------------ */
 
@@ -196,8 +212,12 @@ export function filterNotifications(
 
 /* ------------------------------ Notes ------------------------------ */
 
+export const noteCategoryLabel = (categories: readonly NoteCategory[], id: string): string =>
+  categories.find((category) => category.id === id)?.label ?? 'بدون دسته';
+
 export interface NoteFilter {
-  readonly notebook: NotebookId | 'all';
+  /** A category id, or `'all'`. */
+  readonly categoryId: string;
   readonly color: TagTone | null;
   readonly search: string;
 }
@@ -207,7 +227,7 @@ export function filterNotes(notes: readonly Note[], filter: NoteFilter): readonl
   const query = filter.search.trim().toLowerCase();
   return notes
     .filter((note) => {
-      if (filter.notebook !== 'all' && note.notebook !== filter.notebook) return false;
+      if (filter.categoryId !== 'all' && note.categoryId !== filter.categoryId) return false;
       if (filter.color && !note.colors.includes(filter.color)) return false;
       if (!query) return true;
       return `${note.title} ${note.body}`.toLowerCase().includes(query);
@@ -221,14 +241,15 @@ export function filterNotes(notes: readonly Note[], filter: NoteFilter): readonl
 
 /* ------------------------------ Conversations ------------------------------ */
 
+/**
+ * A thread in arrival order. The store only ever appends (`send-message` pushes to the tail),
+ * so array order *is* the chronology — re-sorting by `sentAt` would let a clock skew between
+ * devices, or a fixture stamped later in the day, lift an older message above a new one.
+ */
 export const conversationMessages = (
   messages: readonly Message[],
   conversationId: string,
-): readonly Message[] =>
-  messages
-    .filter((message) => message.conversationId === conversationId)
-    .slice()
-    .sort((a, b) => parseISODate(a.sentAt).getTime() - parseISODate(b.sentAt).getTime());
+): readonly Message[] => messages.filter((message) => message.conversationId === conversationId);
 
 export const lastMessage = (
   messages: readonly Message[],

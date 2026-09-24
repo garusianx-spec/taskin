@@ -1,26 +1,23 @@
 'use client';
 
-import type { Note, NotebookId, TagTone } from '@/types';
-import { NOTEBOOKS, TAG_TONES } from '@/data/reference';
+import type { Note, NoteCategory, TagTone } from '@/types';
+import { TAG_TONES } from '@/data/reference';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { TAG_DOT } from '@/lib/tag-tone';
 import { notePreview } from '@/lib/markdown';
-import { Button, Input } from '@/components/ui';
 import {
-  AddIcon,
   BriefcaseIcon,
   CalendarIcon,
+  FolderIcon,
   NotebookIcon,
   PinIcon,
-  SearchIcon,
   StarIcon,
   UserIcon,
 } from '@/components/icons';
 
-export type NotebookFilter = NotebookId | 'all';
-
-const NOTEBOOK_ICONS: Readonly<Record<NotebookFilter, typeof NotebookIcon>> = {
+/** Glyphs for the built-in categories; a team's own categories use a folder. */
+const CATEGORY_ICONS: Readonly<Record<string, typeof NotebookIcon>> = {
   all: NotebookIcon,
   personal: UserIcon,
   work: BriefcaseIcon,
@@ -28,72 +25,62 @@ const NOTEBOOK_ICONS: Readonly<Record<NotebookFilter, typeof NotebookIcon>> = {
   meetings: CalendarIcon,
 };
 
+export const categoryIcon = (id: string): typeof NotebookIcon => CATEGORY_ICONS[id] ?? FolderIcon;
+
 export interface NotesSidebarProps {
   readonly notes: readonly Note[];
-  readonly notebook: NotebookFilter;
+  readonly categories: readonly NoteCategory[];
+  /** Active category id, or `'all'`. */
+  readonly categoryId: string;
   readonly color: TagTone | null;
-  readonly search: string;
   readonly selectedNoteId: string | null;
-  readonly onNotebookChange: (notebook: NotebookFilter) => void;
+  readonly onCategoryChange: (categoryId: string) => void;
   readonly onColorChange: (color: TagTone | null) => void;
-  readonly onSearchChange: (query: string) => void;
   readonly onSelectNote: (noteId: string) => void;
-  readonly onCreateNote: () => void;
 }
 
-/** Notes-context column: notebooks, colour-tag filters and the pinned shelf. */
+/**
+ * Notes-context column: categories, colour-tag filters and the pinned shelf. Creating and
+ * searching live in the list header's action hub, so the column stays a navigator.
+ */
 export function NotesSidebar({
   notes,
-  notebook,
+  categories,
+  categoryId,
   color,
-  search,
   selectedNoteId,
-  onNotebookChange,
+  onCategoryChange,
   onColorChange,
-  onSearchChange,
   onSelectNote,
-  onCreateNote,
 }: NotesSidebarProps) {
   const pinned = notes.filter((note) => note.pinned);
-  const countFor = (id: NotebookFilter) =>
-    id === 'all' ? notes.length : notes.filter((note) => note.notebook === id).length;
+  const countFor = (id: string) =>
+    id === 'all' ? notes.length : notes.filter((note) => note.categoryId === id).length;
 
-  const notebooks: ReadonlyArray<{ readonly id: NotebookFilter; readonly label: string }> = [
+  const entries: ReadonlyArray<{ readonly id: string; readonly label: string }> = [
     { id: 'all', label: 'همه یادداشت‌ها' },
-    ...NOTEBOOKS,
+    ...categories,
   ];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-col gap-3 border-b border-secondary p-3">
+      <div className="border-b border-secondary px-3 py-3.5">
         <h2 className="text-title font-bold text-fg-primary">دفترچه یادداشت</h2>
-        <Button fullWidth iconStart={<AddIcon size={18} />} onClick={onCreateNote}>
-          یادداشت جدید
-        </Button>
-        <Input
-          label="جستجو در یادداشت‌ها"
-          hideLabel
-          type="search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="جستجوی عنوان یا متن…"
-          iconStart={<SearchIcon size={18} />}
-        />
       </div>
 
       <div className="scrollbar-thin flex-1 overflow-y-auto p-2">
-        <nav aria-label="دفترچه‌ها" className="flex flex-col gap-0.5">
+        <nav aria-label="دسته‌ها" className="flex flex-col gap-0.5">
           <h3 className="px-2.5 pb-1 text-micro font-semibold uppercase tracking-wide text-fg-quaternary">
-            دفترچه‌ها
+            دسته‌ها
           </h3>
-          {notebooks.map(({ id, label }) => {
-            const Icon = NOTEBOOK_ICONS[id];
-            const active = notebook === id;
+          {entries.map(({ id, label }) => {
+            const Icon = categoryIcon(id);
+            const active = categoryId === id;
             return (
               <button
                 key={id}
                 type="button"
-                onClick={() => onNotebookChange(id)}
+                onClick={() => onCategoryChange(id)}
                 aria-current={active ? 'true' : undefined}
                 className={cn(
                   'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body-sm font-medium transition-colors',

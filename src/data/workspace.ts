@@ -1,5 +1,6 @@
 import type {
   ActivityItem,
+  Workspace,
   AppNotification,
   Attachment,
   CalendarEvent,
@@ -22,10 +23,22 @@ import type {
  */
 const NOW = new Date();
 
+/** Latest clock time any "today" fixture uses. */
+const SEED_DAY_END_MINUTES = 18 * 60;
+
 const at = (dayOffset: number, hours = 9, minutes = 0): string => {
   const date = new Date(NOW);
   date.setDate(date.getDate() + dayOffset);
-  date.setHours(hours, minutes, 0, 0);
+  let minuteOfDay = hours * 60 + minutes;
+  // Today's fixtures are written against a full working day. Opened earlier than that, they
+  // would be dated in the future — and a message sent now would sort above them. Scale the
+  // whole of today into the time that has actually elapsed: order is kept, nothing is ahead
+  // of the clock.
+  const elapsed = NOW.getHours() * 60 + NOW.getMinutes();
+  if (dayOffset === 0 && elapsed < SEED_DAY_END_MINUTES) {
+    minuteOfDay = Math.floor((minuteOfDay * elapsed) / SEED_DAY_END_MINUTES);
+  }
+  date.setHours(0, minuteOfDay, 0, 0);
   return date.toISOString();
 };
 
@@ -43,19 +56,44 @@ const dateOnly = (dayOffset: number): string => {
 
 /* ------------------------------ Workspace ------------------------------ */
 
-export const WORKSPACE = {
-  id: 'ws-rahnama',
-  name: 'هلدینگ راهنما',
-  plan: 'سازمانی',
-  initials: 'هـر',
-  memberCount: 46,
-} as const;
+/** The workspace every fixture below belongs to. */
+export const PRIMARY_WORKSPACE_ID = 'ws-rahnama';
 
-export const WORKSPACES = [
-  { id: 'ws-rahnama', name: 'هلدینگ راهنما', initials: 'هـر', memberCount: 46 },
-  { id: 'ws-parsdata', name: 'پارس‌داده', initials: 'پد', memberCount: 18 },
-  { id: 'ws-nikan', name: 'استودیو نیکان', initials: 'نـک', memberCount: 9 },
-] as const;
+export const WORKSPACES: readonly Workspace[] = [
+  {
+    id: PRIMARY_WORKSPACE_ID,
+    name: 'هلدینگ راهنما',
+    description: 'فضای کاری اصلی گروه راهنما: محصول، مهندسی، بازاریابی و مالی.',
+    initials: 'هـر',
+    tone: 'brand',
+    iconUrl: null,
+    plan: 'سازمانی',
+    memberCount: 46,
+    ownerId: 'u-kamran',
+  },
+  {
+    id: 'ws-parsdata',
+    name: 'پارس‌داده',
+    description: 'پروژه مشترک تحلیل داده با شرکت پارس‌داده.',
+    initials: 'پد',
+    tone: 'teal',
+    iconUrl: null,
+    plan: 'تیمی',
+    memberCount: 18,
+    ownerId: 'u-sahar',
+  },
+  {
+    id: 'ws-nikan',
+    name: 'استودیو نیکان',
+    description: 'همکاری طراحی با استودیو نیکان.',
+    initials: 'نـک',
+    tone: 'violet',
+    iconUrl: null,
+    plan: 'تیمی',
+    memberCount: 9,
+    ownerId: 'u-nasim',
+  },
+];
 
 /* ------------------------------ People ------------------------------ */
 
@@ -230,6 +268,7 @@ const ATTACHMENTS: Readonly<Record<string, Attachment>> = {
     size: 2_418_176,
     uploadedAt: at(-6, 11, 20),
     uploadedById: 'u-sahar',
+    url: null,
   },
   wireframe: {
     id: 'att-wireframe',
@@ -238,6 +277,7 @@ const ATTACHMENTS: Readonly<Record<string, Attachment>> = {
     size: 8_912_896,
     uploadedAt: at(-3, 15, 5),
     uploadedById: 'u-nasim',
+    url: null,
   },
   budget: {
     id: 'att-budget',
@@ -246,6 +286,7 @@ const ATTACHMENTS: Readonly<Record<string, Attachment>> = {
     size: 512_000,
     uploadedAt: at(-2, 9, 45),
     uploadedById: 'u-mahtab',
+    url: null,
   },
   audit: {
     id: 'att-audit',
@@ -254,6 +295,7 @@ const ATTACHMENTS: Readonly<Record<string, Attachment>> = {
     size: 15_728_640,
     uploadedAt: at(-1, 17, 30),
     uploadedById: 'u-behrooz',
+    url: null,
   },
   api: {
     id: 'att-api',
@@ -262,6 +304,34 @@ const ATTACHMENTS: Readonly<Record<string, Attachment>> = {
     size: 1_048_576,
     uploadedAt: at(-4, 10, 0),
     uploadedById: 'u-arash',
+    url: null,
+  },
+  screenshot: {
+    id: 'att-screenshot',
+    name: 'داشبورد-حالت-تیره.png',
+    kind: 'image',
+    size: 1_284_096,
+    uploadedAt: at(-1, 12, 5),
+    uploadedById: 'u-nasim',
+    url: null,
+  },
+  demo: {
+    id: 'att-demo',
+    name: 'دموی-جریان-ورود.mp4',
+    kind: 'video',
+    size: 24_117_248,
+    uploadedAt: at(-1, 14, 10),
+    uploadedById: 'u-nasim',
+    url: null,
+  },
+  recording: {
+    id: 'att-recording',
+    name: 'ضبط-جلسه-بازبینی.m4a',
+    kind: 'audio',
+    size: 3_932_160,
+    uploadedAt: at(-1, 16, 30),
+    uploadedById: 'u-sahar',
+    url: null,
   },
 };
 
@@ -669,6 +739,18 @@ export const MESSAGES: readonly Message[] = [
     readByIds: ['u-sahar', 'u-arash'],
   },
   {
+    id: 'm-02b',
+    conversationId: 'conv-product',
+    authorId: 'u-sahar',
+    sentAt: at(-2, 9, 34),
+    body: { kind: 'file', attachment: ATTACHMENTS['brief'] as Attachment, caption: 'بریف نهایی برای مرجع همه' },
+    replyToId: null,
+    reactions: [],
+    edited: false,
+    linkedTaskId: null,
+    readByIds: ['u-nasim', 'u-arash', 'u-mahtab'],
+  },
+  {
     id: 'm-03',
     conversationId: 'conv-product',
     authorId: 'u-nasim',
@@ -691,6 +773,57 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-sahar', 'u-nasim'],
+  },
+  {
+    id: 'm-04b',
+    conversationId: 'conv-product',
+    authorId: 'u-nasim',
+    sentAt: at(-1, 12, 5),
+    body: { kind: 'file', attachment: ATTACHMENTS['screenshot'] as Attachment, caption: 'حالت تیره داشبورد با پالت جدید' },
+    replyToId: null,
+    reactions: [{ emoji: '❤️', userIds: ['u-sahar', 'u-mahtab'] }],
+    edited: false,
+    linkedTaskId: null,
+    readByIds: ['u-sahar', 'u-arash'],
+  },
+  {
+    id: 'm-04c',
+    conversationId: 'conv-product',
+    authorId: 'u-arash',
+    sentAt: at(-1, 12, 20),
+    body: {
+      kind: 'text',
+      text: 'مستندات احراز هویت نسخه ۲ اینجاست: https://docs.rahnama.ir/api/v2/authentication و پروتوتایپ جریان ورود در فیگما: https://www.figma.com/file/k9Qe7/crm-login-redesign',
+    },
+    replyToId: null,
+    reactions: [],
+    edited: false,
+    linkedTaskId: null,
+    readByIds: ['u-sahar', 'u-nasim'],
+  },
+  {
+    id: 'm-04d',
+    conversationId: 'conv-product',
+    authorId: 'u-nasim',
+    sentAt: at(-1, 14, 10),
+    body: { kind: 'file', attachment: ATTACHMENTS['demo'] as Attachment, caption: 'دموی کوتاه جریان ورود دومرحله‌ای' },
+    replyToId: null,
+    reactions: [],
+    edited: false,
+    linkedTaskId: null,
+    readByIds: ['u-sahar'],
+  },
+  {
+    id: 'm-04e',
+    conversationId: 'conv-product',
+    authorId: 'u-sahar',
+    sentAt: at(-1, 16, 30),
+    body: { kind: 'file', attachment: ATTACHMENTS['recording'] as Attachment, caption: 'ضبط جلسه بازبینی برای کسانی که نبودند' },
+    replyToId: null,
+    reactions: [],
+    edited: false,
+    linkedTaskId: null,
+    readByIds: ['u-nasim', 'u-arash'],
   },
   {
     id: 'm-05',
@@ -820,6 +953,21 @@ export const MESSAGES: readonly Message[] = [
     edited: false,
     linkedTaskId: null,
     readByIds: ['u-arash'],
+  },
+  {
+    id: 'm-16b',
+    conversationId: 'conv-release',
+    authorId: 'u-arash',
+    sentAt: at(-1, 18, 5),
+    body: {
+      kind: 'text',
+      text: 'نسخه کاندید منتشر شد، یادداشت انتشار: https://github.com/rahnama/crm-web/releases/tag/v2.4.0-rc1',
+    },
+    replyToId: null,
+    reactions: [],
+    edited: false,
+    linkedTaskId: null,
+    readByIds: ['u-sahar', 'u-payam'],
   },
   {
     id: 'm-17',
@@ -1012,7 +1160,7 @@ export const CALENDAR_EVENTS: readonly CalendarEvent[] = [
 export const NOTES: readonly Note[] = [
   {
     id: 'note-1',
-    notebook: 'meetings',
+    categoryId: 'meetings',
     title: 'جمع‌بندی بازخورد کاربران بتا',
     body: [
       '## نکات کلیدی',
@@ -1032,7 +1180,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     id: 'note-2',
-    notebook: 'work',
+    categoryId: 'work',
     title: 'چک‌لیست انتشار نسخه ۲.۴',
     body: [
       '- [x] فریز کد و ساخت نسخه کاندید',
@@ -1049,7 +1197,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     id: 'note-3',
-    notebook: 'ideas',
+    categoryId: 'ideas',
     title: 'ایده: خلاصه هوشمند گفتگوها',
     body: [
       'وقتی کاربر بعد از چند ساعت به یک کانال شلوغ برمی‌گردد، یک *خلاصه سه‌خطی* بالای پیام‌های خوانده‌نشده نمایش دهیم.',
@@ -1065,7 +1213,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     id: 'note-4',
-    notebook: 'personal',
+    categoryId: 'personal',
     title: 'برنامه این هفته',
     body: [
       '- [x] بازبینی نقشه راه فصل بعد',
@@ -1080,7 +1228,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     id: 'note-5',
-    notebook: 'meetings',
+    categoryId: 'meetings',
     title: 'صورت‌جلسه کمیته بودجه',
     body: [
       '## مصوبات',
@@ -1095,7 +1243,7 @@ export const NOTES: readonly Note[] = [
   },
   {
     id: 'note-6',
-    notebook: 'ideas',
+    categoryId: 'ideas',
     title: 'نام‌گذاری ستون‌های بورد',
     body: 'به‌جای «منتظر تایید» از «بازبینی همتا» استفاده کنیم؟ در جلسه تیم مطرح شود.',
     colors: ['gray'],
@@ -1221,12 +1369,23 @@ export const LOGIN_SESSIONS: readonly LoginSession[] = [
 export const INVITATIONS: readonly Invitation[] = [
   {
     id: 'inv-1',
-    email: 'reza.ahmadi@rahnama.ir',
+    address: 'reza.ahmadi@rahnama.ir',
+    channel: 'email',
     role: 'member',
     department: 'engineering',
     message: '',
     invitedAt: at(-1, 12, 0),
     invitedById: 'u-arash',
+  },
+  {
+    id: 'inv-2',
+    address: '09351234567',
+    channel: 'sms',
+    role: 'guest',
+    department: 'marketing',
+    message: '',
+    invitedAt: at(-2, 16, 20),
+    invitedById: 'u-sahar',
   },
 ];
 

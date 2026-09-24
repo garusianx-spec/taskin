@@ -1,4 +1,5 @@
 import type {
+  ActivityItem,
   AppNotification,
   AvatarTone,
   BoardColumn,
@@ -9,10 +10,11 @@ import type {
   DepartmentId,
   InspectorTarget,
   Invitation,
+  InvitationRecipient,
   LoginSession,
   Message,
   Note,
-  NotebookId,
+  NoteCategory,
   NotePatch,
   PermissionActionId,
   PermissionMatrix,
@@ -27,6 +29,8 @@ import type {
   TaskPlacement,
   TaskStatus,
   TaskViewMode,
+  Workspace,
+  WorkspaceDraft,
 } from '@/types';
 import {
   CUSTOM_COLUMN_STATUS,
@@ -35,12 +39,22 @@ import {
   statusLabel,
 } from '@/data/reference';
 import { toPersianDigits } from '@/lib/jalali';
+import { columnForTask } from './selectors';
 import { nextLocalId as nextId } from './ids';
 import { INITIAL_WORKSPACE_STATE } from './initial-state';
+import { EMPTY_SCOPE, scopeOf, type WorkspaceScope } from './workspace-scope';
+import { monogram } from '@/lib/initials';
 
 export interface WorkspaceState {
   readonly session: SessionStatus;
+  readonly workspaces: readonly Workspace[];
+  readonly activeWorkspaceId: string;
+  /** Scoped data of the workspaces not on screen, restored when switched back to. */
+  readonly parkedWorkspaces: Readonly<Record<string, WorkspaceScope>>;
+  readonly activity: readonly ActivityItem[];
   readonly tasks: readonly Task[];
+  /** Cards archived when their column was deleted. Out of every view; kept, not destroyed. */
+  readonly archivedTasks: readonly Task[];
   readonly boardColumns: readonly BoardColumn[];
   readonly conversations: readonly Conversation[];
   readonly messages: readonly Message[];
@@ -48,6 +62,7 @@ export interface WorkspaceState {
   /** Date the calendar should open on after an event is created elsewhere; cleared on read. */
   readonly calendarFocusDate: string | null;
   readonly notes: readonly Note[];
+  readonly noteCategories: readonly NoteCategory[];
   readonly notifications: readonly AppNotification[];
   readonly invitations: readonly Invitation[];
   readonly loginSessions: readonly LoginSession[];
@@ -85,7 +100,8 @@ export type WorkspaceAction =
   | { readonly type: 'move-task-to-column'; readonly taskId: string; readonly columnId: string }
   | { readonly type: 'set-task-completed'; readonly taskId: string; readonly completed: boolean }
   | { readonly type: 'add-board-column'; readonly title: string; readonly tone: TagTone }
-  | { readonly type: 'remove-board-column'; readonly columnId: string }
+  | { readonly type: 'rename-board-column'; readonly columnId: string; readonly title: string }
+  | { readonly type: 'remove-board-column'; readonly columnId: string; readonly disposition: ColumnDisposition }
   | { readonly type: 'patch-task'; readonly taskId: string; readonly patch: TaskPatch }
   | { readonly type: 'toggle-task-star'; readonly taskId: string }
   | { readonly type: 'toggle-subtask'; readonly taskId: string; readonly subtaskId: string }
@@ -102,7 +118,9 @@ export type WorkspaceAction =
   | { readonly type: 'toggle-conversation-mute'; readonly conversationId: string }
   | { readonly type: 'create-calendar-event'; readonly draft: CalendarEventDraft }
   | { readonly type: 'clear-calendar-focus' }
-  | { readonly type: 'create-note'; readonly noteId: string; readonly notebook: NotebookId }
+  | { readonly type: 'create-note'; readonly noteId: string; readonly categoryId: string }
+  | { readonly type: 'create-note-category'; readonly categoryId: string; readonly label: string }
+  | { readonly type: 'delete-note-category'; readonly categoryId: string }
   | { readonly type: 'update-note'; readonly noteId: string; readonly patch: NotePatch }
   | { readonly type: 'delete-note'; readonly noteId: string }
   | { readonly type: 'mark-notification-read'; readonly notificationId: string }
@@ -114,6 +132,9 @@ export type WorkspaceAction =
   | { readonly type: 'record-password-change' }
   | { readonly type: 'revoke-login-session'; readonly sessionId: string }
   | { readonly type: 'revoke-other-login-sessions' }
+  | { readonly type: 'switch-workspace'; readonly workspaceId: string }
+  | { readonly type: 'create-workspace'; readonly workspaceId: string; readonly draft: WorkspaceDraft; readonly ownerId: string }
+  | { readonly type: 'delete-workspace'; readonly workspaceId: string; readonly actorId: string }
   | { readonly type: 'sign-out' }
   | { readonly type: 'sign-in' }
   | { readonly type: 'set-permission'; readonly role: RoleId; readonly module: PermissionModuleId; readonly action: PermissionActionId; readonly value: boolean }
@@ -122,6 +143,11 @@ export type WorkspaceAction =
   | { readonly type: 'set-role-permissions'; readonly role: RoleId; readonly value: boolean }
   | { readonly type: 'replace-permissions'; readonly permissions: PermissionMatrix }
   | { readonly type: 'announce'; readonly message: string };
+
+/** What happens to the cards of a column being deleted. Irrelevant when it is empty. */
+export type ColumnDisposition =
+  | { readonly kind: 'migrate'; readonly targetColumnId: string }
+  | { readonly kind: 'archive' };
 
 export interface ConversationDraft {
   readonly kind: 'direct' | 'group';
@@ -133,7 +159,7 @@ export interface ConversationDraft {
 }
 
 export interface InvitationDraft {
-  readonly emails: readonly string[];
+  readonly recipients: readonly InvitationRecipient[];
   readonly role: RoleId;
   readonly department: DepartmentId;
   readonly message: string;
@@ -195,6 +221,27 @@ function placementForColumn(columns: readonly BoardColumn[], columnId: string): 
 function columnTitle(columns: readonly BoardColumn[], placement: TaskPlacement): string {
   const id = placement.boardColumnId ?? placement.status;
   return columns.find((column) => column.id === id)?.title ?? statusLabel(placement.status);
+}
+
+/**
+ * Swaps the scoped slices to `targetId`'s and resets per-screen view state (inspector,
+ * filters, searches) that would otherwise point into the previous workspace's data.
+ * `park` is false when the outgoing workspace is being deleted and its data discarded.
+ */
+function activateWorkspace(state: WorkspaceState, targetId: string, park: boolean): WorkspaceState {
+  const { [targetId]: incoming = EMPTY_SCOPE, ...others } = state.parkedWorkspaces;
+  return {
+    ...state,
+    ...incoming,
+    activeWorkspaceId: targetId,
+    parkedWorkspaces: park ? { ...others, [state.activeWorkspaceId]: scopeOf(state) } : others,
+    inspector: { kind: 'none' },
+    calendarFocusDate: null,
+    smartView: 'all',
+    projectFilterId: null,
+    taskSearch: '',
+    chatSearch: '',
+  };
 }
 
 const sameMembers = (a: readonly string[], b: readonly string[]): boolean =>
@@ -309,25 +356,64 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       };
     }
 
-    case 'remove-board-column': {
+    case 'rename-board-column': {
+      const title = action.title.trim();
       const column = state.boardColumns.find((entry) => entry.id === action.columnId);
-      if (!column || !column.custom) return state;
-      const displaced = state.tasks.filter((task) => task.boardColumnId === column.id).length;
+      if (!column || !title || title === column.title) return state;
+      const taken = state.boardColumns.some((entry) => entry.id !== column.id && entry.title.trim() === title);
+      if (taken) return state;
       return {
         ...state,
-        boardColumns: state.boardColumns.filter((entry) => entry.id !== column.id),
-        // Cards fall back to the built-in column for the status they already carry.
-        tasks: state.tasks.map((task) => {
-          if (task.boardColumnId === column.id) return { ...task, boardColumnId: null };
-          if (task.reopenTo?.boardColumnId === column.id) {
-            return { ...task, reopenTo: { ...task.reopenTo, boardColumnId: null } };
-          }
-          return task;
-        }),
-        announcement:
-          displaced > 0
-            ? `ستون «${column.title}» حذف شد و ${toPersianDigits(displaced)} وظیفه به ستون ${statusLabel(column.status)} منتقل شد.`
-            : `ستون «${column.title}» حذف شد.`,
+        boardColumns: state.boardColumns.map((entry) => (entry.id === column.id ? { ...entry, title } : entry)),
+        announcement: `ستون «${column.title}» به «${title}» تغییر نام داد.`,
+      };
+    }
+
+    case 'remove-board-column': {
+      const column = state.boardColumns.find((entry) => entry.id === action.columnId);
+      // The board always keeps one column, so every card keeps somewhere to render.
+      if (!column || state.boardColumns.length <= 1) return state;
+
+      const inColumn = new Set(
+        state.tasks.filter((task) => columnForTask(state.boardColumns, task)?.id === column.id).map((task) => task.id),
+      );
+      const remaining = state.boardColumns.filter((entry) => entry.id !== column.id);
+      const forget = (task: Task): Task =>
+        task.reopenTo?.boardColumnId === column.id
+          ? { ...task, reopenTo: { ...task.reopenTo, boardColumnId: null } }
+          : task;
+
+      if (inColumn.size === 0) {
+        return {
+          ...state,
+          boardColumns: remaining,
+          tasks: state.tasks.map(forget),
+          announcement: `ستون «${column.title}» حذف شد.`,
+        };
+      }
+
+      if (action.disposition.kind === 'archive') {
+        const archived = state.tasks.filter((task) => inColumn.has(task.id));
+        const inspectedArchived = state.inspector.kind === 'task' && inColumn.has(state.inspector.taskId);
+        return {
+          ...state,
+          boardColumns: remaining,
+          tasks: state.tasks.filter((task) => !inColumn.has(task.id)).map(forget),
+          archivedTasks: [...archived, ...state.archivedTasks],
+          inspector: inspectedArchived ? { kind: 'none' } : state.inspector,
+          announcement: `ستون «${column.title}» حذف شد و ${toPersianDigits(archived.length)} وظیفه بایگانی شد.`,
+        };
+      }
+
+      const { targetColumnId } = action.disposition;
+      const target = remaining.find((entry) => entry.id === targetColumnId);
+      const placement = target ? placementForColumn(remaining, target.id) : null;
+      if (!target || !placement) return state;
+      return {
+        ...state,
+        boardColumns: remaining,
+        tasks: state.tasks.map((task) => forget(inColumn.has(task.id) ? placeTask(task, placement) : task)),
+        announcement: `ستون «${column.title}» حذف شد و ${toPersianDigits(inColumn.size)} وظیفه به ستون «${target.title}» منتقل شد.`,
       };
     }
 
@@ -604,7 +690,7 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       const timestamp = nowIso();
       const note: Note = {
         id: action.noteId,
-        notebook: action.notebook,
+        categoryId: action.categoryId,
         title: '',
         body: '',
         colors: [],
@@ -614,6 +700,28 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         linkedTaskId: null,
       };
       return { ...state, notes: [note, ...state.notes] };
+    }
+
+    case 'create-note-category': {
+      const label = action.label.trim();
+      if (!label || state.noteCategories.some((category) => category.label.trim() === label)) return state;
+      return {
+        ...state,
+        noteCategories: [...state.noteCategories, { id: action.categoryId, label, builtIn: false }],
+        announcement: `دسته «${label}» ایجاد شد.`,
+      };
+    }
+
+    case 'delete-note-category': {
+      const category = state.noteCategories.find((entry) => entry.id === action.categoryId);
+      // Only a team's own, empty categories go; built-ins and anything holding notes stay.
+      if (!category || category.builtIn) return state;
+      if (state.notes.some((note) => note.categoryId === category.id)) return state;
+      return {
+        ...state,
+        noteCategories: state.noteCategories.filter((entry) => entry.id !== category.id),
+        announcement: `دسته «${category.label}» حذف شد.`,
+      };
     }
 
     case 'update-note':
@@ -655,13 +763,20 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
 
     case 'invite-members': {
       const { draft } = action;
-      const pending = new Set(state.invitations.map((invitation) => invitation.email));
-      const fresh = draft.emails.filter((email) => !pending.has(email));
+      // Skip anyone already invited, and repeats within the batch itself.
+      const seen = new Set(state.invitations.map((invitation) => invitation.address));
+      const fresh: InvitationRecipient[] = [];
+      for (const recipient of draft.recipients) {
+        if (seen.has(recipient.address)) continue;
+        seen.add(recipient.address);
+        fresh.push(recipient);
+      }
       if (fresh.length === 0) return state;
       const invitedAt = nowIso();
-      const created: Invitation[] = fresh.map((email) => ({
+      const created: Invitation[] = fresh.map(({ address, channel }) => ({
         id: nextId('inv'),
-        email,
+        address,
+        channel,
         role: draft.role,
         department: draft.department,
         message: draft.message,
@@ -708,6 +823,49 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         loginSessions: state.loginSessions.filter((session) => session.current),
         announcement: 'از همه نشست‌های دیگر خارج شدید.',
       };
+
+    case 'switch-workspace': {
+      const target = state.workspaces.find((workspace) => workspace.id === action.workspaceId);
+      if (!target || target.id === state.activeWorkspaceId) return state;
+      return { ...activateWorkspace(state, target.id, true), announcement: `فضای کاری «${target.name}» فعال شد.` };
+    }
+
+    case 'create-workspace': {
+      const name = action.draft.name.trim();
+      if (!name) return state;
+      const workspace: Workspace = {
+        id: action.workspaceId,
+        name,
+        description: action.draft.description.trim(),
+        initials: monogram(name),
+        tone: action.draft.tone,
+        iconUrl: action.draft.iconUrl,
+        plan: 'رایگان',
+        memberCount: 1,
+        ownerId: action.ownerId,
+      };
+      return {
+        ...activateWorkspace({ ...state, workspaces: [...state.workspaces, workspace] }, workspace.id, true),
+        announcement: `فضای کاری «${name}» ایجاد و فعال شد.`,
+      };
+    }
+
+    case 'delete-workspace': {
+      const workspace = state.workspaces.find((entry) => entry.id === action.workspaceId);
+      // Owner only, and never the last workspace — the app always has somewhere to stand.
+      if (!workspace || workspace.ownerId !== action.actorId || state.workspaces.length <= 1) return state;
+      const workspaces = state.workspaces.filter((entry) => entry.id !== workspace.id);
+      const announcement = `فضای کاری «${workspace.name}» برای همیشه حذف شد.`;
+      if (workspace.id !== state.activeWorkspaceId) {
+        const parked = Object.fromEntries(
+          Object.entries(state.parkedWorkspaces).filter(([id]) => id !== workspace.id),
+        );
+        return { ...state, workspaces, parkedWorkspaces: parked, announcement };
+      }
+      const fallback = workspaces[0];
+      if (!fallback) return state;
+      return { ...activateWorkspace({ ...state, workspaces }, fallback.id, false), announcement };
+    }
 
     case 'sign-out':
       // Everything the member did this session is dropped; only the theme (stored by the

@@ -22,8 +22,8 @@ interface MobileTab {
 
 const TABS: readonly MobileTab[] = [
   { href: '/feed', label: 'میز کار', Icon: HomeIcon },
-  { href: '/chats', label: 'گفتگوها', Icon: MessagesIcon },
   { href: '/tasks', label: 'وظایف من', Icon: TaskSquareIcon },
+  { href: '/chats', label: 'گفتگوها', Icon: MessagesIcon },
   { href: '/calendar', label: 'تقویم', Icon: CalendarIcon },
   { href: '/more', label: 'بیشتر', Icon: GridIcon },
 ];

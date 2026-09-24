@@ -11,6 +11,11 @@ import { ProfileModal } from '@/components/account/ProfileModal';
 import { SecurityModal } from '@/components/account/SecurityModal';
 import { SignOutModal } from '@/components/account/SignOutModal';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { CreateWorkspaceModal } from '@/components/workspace/CreateWorkspaceModal';
+import { WorkspaceSettingsModal } from '@/components/workspace/WorkspaceSettingsModal';
+import { DeleteWorkspaceModal } from '@/components/workspace/DeleteWorkspaceModal';
+import { nextLocalId } from '@/store/ids';
+import { userById } from '@/store/selectors';
 import { useOverlays } from './context';
 
 /**
@@ -21,7 +26,7 @@ import { useOverlays } from './context';
 export function OverlayHost() {
   const router = useRouter();
   const pathname = usePathname();
-  const { state, dispatch, currentUser } = useWorkspace();
+  const { state, dispatch, currentUser, activeWorkspace, isWorkspaceOwner } = useWorkspace();
   const { active, open, close } = useOverlays();
 
   const goTo = (href: string) => {
@@ -32,6 +37,11 @@ export function OverlayHost() {
     dispatch({ type: 'select-conversation', conversationId });
     goTo('/chats');
   };
+
+  const pendingDeletion =
+    active?.kind === 'workspace-delete'
+      ? (state.workspaces.find((workspace) => workspace.id === active.workspaceId) ?? null)
+      : null;
 
   return (
     <>
@@ -78,6 +88,46 @@ export function OverlayHost() {
         onSubmit={(draft) => {
           dispatch({ type: 'invite-members', draft, invitedById: currentUser.id });
           close();
+        }}
+      />
+
+      <CreateWorkspaceModal
+        open={active?.kind === 'workspace-create'}
+        onClose={close}
+        onSubmit={(draft) => {
+          dispatch({
+            type: 'create-workspace',
+            workspaceId: nextLocalId('ws'),
+            draft,
+            ownerId: currentUser.id,
+          });
+          close();
+          goTo('/feed');
+        }}
+      />
+
+      <WorkspaceSettingsModal
+        open={active?.kind === 'workspace-settings'}
+        workspace={activeWorkspace}
+        owner={userById(activeWorkspace.ownerId)}
+        isOwner={isWorkspaceOwner}
+        isLastWorkspace={state.workspaces.length <= 1}
+        onClose={close}
+        onRequestDelete={() => open({ kind: 'workspace-delete', workspaceId: activeWorkspace.id })}
+      />
+
+      <DeleteWorkspaceModal
+        workspace={pendingDeletion}
+        onClose={() => open({ kind: 'workspace-settings' })}
+        onConfirm={() => {
+          if (!pendingDeletion) return;
+          dispatch({
+            type: 'delete-workspace',
+            workspaceId: pendingDeletion.id,
+            actorId: currentUser.id,
+          });
+          close();
+          goTo('/feed');
         }}
       />
 
@@ -140,7 +190,10 @@ export function OverlayHost() {
         onMarkRead={(notificationId) => dispatch({ type: 'mark-notification-read', notificationId })}
         onMarkAllRead={() => dispatch({ type: 'mark-all-notifications-read' })}
         onOpenTarget={(notification) => {
-          dispatch({ type: 'mark-notification-read', notificationId: notification.id });
+          dispatch({
+            type: 'mark-notification-read',
+            notificationId: notification.id,
+          });
           close();
           if (notification.target.kind === 'task') {
             dispatch({ type: 'open-task', taskId: notification.target.taskId });

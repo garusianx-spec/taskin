@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { useOverlays } from '@/components/overlays/OverlayProvider';
-import { WORKSPACE } from '@/data/workspace';
 import { roleLabel } from '@/data/reference';
 import { formatCount } from '@/lib/format';
 import { AppShell } from '@/components/layout/AppShell';
 import { ThemePicker } from '@/components/theme/ThemePicker';
-import { Avatar, Badge } from '@/components/ui';
+import { Avatar, Badge, Button, Popover } from '@/components/ui';
+import { WorkspaceAvatar } from '@/components/workspace/WorkspaceAvatar';
+import { WorkspaceMenu } from '@/components/workspace/WorkspaceMenu';
 import {
   ChevronForwardIcon,
   KeyIcon,
@@ -22,7 +23,7 @@ import {
 } from '@/components/icons';
 
 const LINKS = [
-  { href: '/notes', label: 'یادداشت‌ها', description: 'دفترچه‌های شخصی، کاری و صورت‌جلسه‌ها', Icon: NotebookIcon },
+  { href: '/notes', label: 'یادداشت‌ها', description: 'دسته‌های شخصی، کاری، ایده‌ها و صورت‌جلسه‌ها', Icon: NotebookIcon },
   { href: '/directory', label: 'اعضای سازمان', description: 'فهرست همکاران و اطلاعات تماس', Icon: PeopleIcon },
   { href: '/settings/roles', label: 'نقش‌ها و دسترسی‌ها', description: 'مدیریت سطوح دسترسی', Icon: ShieldIcon },
 ] as const;
@@ -37,7 +38,7 @@ export default function MorePage() {
 }
 
 function MoreContent() {
-  const { currentUser, state } = useWorkspace();
+  const { currentUser, state, activeWorkspace } = useWorkspace();
   const { open } = useOverlays();
 
   return (
@@ -61,11 +62,28 @@ function MoreContent() {
         </div>
       </section>
 
-      <section className="mb-5 rounded-xl border border-secondary bg-surface p-3 shadow-xs">
-        <h2 className="mb-1 px-1 text-title-sm font-semibold text-fg-primary">فضای کاری</h2>
-        <p className="numeric px-1 text-caption text-fg-tertiary">
-          {`${WORKSPACE.name}، ${formatCount(WORKSPACE.memberCount)} عضو، طرح ${WORKSPACE.plan}`}
-        </p>
+      <section className="mb-5 flex items-center gap-3 rounded-xl border border-secondary bg-surface p-3 shadow-xs">
+        <WorkspaceAvatar workspace={activeWorkspace} size="md" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <h2 className="text-caption font-medium text-fg-tertiary">فضای کاری فعال</h2>
+          <p className="truncate text-body-sm font-semibold text-fg-primary">{activeWorkspace.name}</p>
+          <p className="numeric truncate text-micro text-fg-tertiary">
+            {`${formatCount(activeWorkspace.memberCount)} عضو، طرح ${activeWorkspace.plan}`}
+          </p>
+        </div>
+        <Popover
+          label="تعویض فضای کاری"
+          haspopup="menu"
+          align="end"
+          panelClassName="min-w-72"
+          trigger={
+            <Button variant="secondary" size="sm">
+              تعویض
+            </Button>
+          }
+        >
+          {(close) => <WorkspaceMenu close={close} />}
+        </Popover>
       </section>
 
       <section className="mb-5 rounded-xl border border-secondary bg-surface p-3 shadow-xs">
@@ -93,7 +111,7 @@ function MoreContent() {
 
         <ActionRow
           label="دعوت همکار"
-          description="دعوت با ایمیل، نقش و دپارتمان"
+          description="دعوت با ایمیل یا شماره موبایل، نقش و دپارتمان"
           icon={<UserAddIcon size={20} variant="twotone" />}
           onClick={() => open({ kind: 'invite-member' })}
         />
@@ -110,19 +128,12 @@ function MoreContent() {
           onClick={() => open({ kind: 'security' })}
         />
 
-        <button
-          type="button"
-          className="flex items-center gap-3 rounded-xl border border-secondary bg-surface p-3.5 text-start shadow-xs transition-colors hover:border-brand"
-        >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sunken text-fg-brand">
-            <SettingsIcon size={20} />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-body-sm font-semibold text-fg-primary">تنظیمات فضای کاری</span>
-            <span className="truncate text-micro text-fg-tertiary">نام سازمان، دامنه و یکپارچه‌سازی‌ها</span>
-          </span>
-          <ChevronForwardIcon size={18} className="shrink-0 text-fg-quaternary" />
-        </button>
+        <ActionRow
+          label="تنظیمات فضای کاری"
+          description="مالکیت، طرح اشتراک و حذف فضای کاری"
+          icon={<SettingsIcon size={20} />}
+          onClick={() => open({ kind: 'workspace-settings' })}
+        />
 
         <button
           type="button"

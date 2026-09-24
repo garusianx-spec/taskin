@@ -3,7 +3,7 @@
 import { forwardRef, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { useNamespacedId } from '@/hooks/useId';
-import { LockIcon } from '@/components/icons';
+import { LockIcon, MinusIcon } from '@/components/icons';
 
 export type SwitchSize = 'sm' | 'md';
 
@@ -19,7 +19,7 @@ export interface SwitchProps {
   readonly locked?: boolean;
   readonly size?: SwitchSize;
   readonly className?: string;
-  /** Mixed state for "some permissions in this row are on" master switches. */
+  /** Mixed state for "some permissions in this row are on" master switches: off-end knob with a dash. */
   readonly indeterminate?: boolean;
 }
 
@@ -58,13 +58,12 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(function Switch
 ) {
   const isDisabled = disabled || locked;
 
-  // Knob travel = track width - knob width - borders. In RTL it moves toward the start edge.
-  // `mixed` parks the knob mid-track so a partially-granted row reads as neither on nor off.
-  const knobTravel = indeterminate
-    ? size === 'sm'
-      ? 'ltr:translate-x-2 rtl:-translate-x-2'
-      : 'ltr:translate-x-2.5 rtl:-translate-x-2.5'
-    : checked
+  // Knob travel = track width - knob width - borders. The knob only ever rests at an end:
+  // on = the far end (left in RTL), off = the start end (right in RTL). A partially-granted
+  // master switch (`mixed`) rests at the off end — clicking it grants everything — and says
+  // "partial" with a tinted track and a dash in the knob instead of a thumb stranded mid-way.
+  const knobTravel =
+    checked && !indeterminate
       ? size === 'sm'
         ? 'ltr:translate-x-4 rtl:-translate-x-4'
         : 'ltr:translate-x-5 rtl:-translate-x-5'
@@ -111,7 +110,11 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(function Switch
           knobTravel,
         )}
       >
-        {locked && <LockIcon size={size === 'sm' ? 10 : 12} className="text-gray-500" />}
+        {locked ? (
+          <LockIcon size={size === 'sm' ? 10 : 12} className="text-gray-500" />
+        ) : indeterminate ? (
+          <MinusIcon size={size === 'sm' ? 10 : 12} className="text-brand-600" />
+        ) : null}
       </span>
     </button>
   );

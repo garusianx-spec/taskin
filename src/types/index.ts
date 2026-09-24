@@ -42,6 +42,30 @@ export interface User {
 
 export type AvatarTone = 'brand' | 'teal' | 'violet' | 'amber' | 'rose' | 'slate';
 
+/* ============================== Workspaces ============================== */
+
+export interface Workspace {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  /** Two-letter fallback shown when there is no uploaded icon. */
+  readonly initials: string;
+  readonly tone: AvatarTone;
+  /** Uploaded icon as a data URL (kept client-side in this front end), or `null`. */
+  readonly iconUrl: string | null;
+  readonly plan: string;
+  readonly memberCount: number;
+  /** The Owner — the only member who may delete the workspace. */
+  readonly ownerId: string;
+}
+
+export interface WorkspaceDraft {
+  readonly name: string;
+  readonly description: string;
+  readonly tone: AvatarTone;
+  readonly iconUrl: string | null;
+}
+
 /* ============================== Role & permission (RBAC) ============================== */
 
 export type PermissionModuleId = 'messages' | 'boards' | 'files' | 'reports' | 'members';
@@ -92,7 +116,7 @@ export interface Subtask {
   readonly assigneeId: string | null;
 }
 
-export type AttachmentKind = 'image' | 'document' | 'sheet' | 'archive' | 'audio' | 'link';
+export type AttachmentKind = 'image' | 'video' | 'document' | 'sheet' | 'archive' | 'audio' | 'link';
 
 export interface Attachment {
   readonly id: string;
@@ -102,6 +126,8 @@ export interface Attachment {
   readonly size: number;
   readonly uploadedAt: string;
   readonly uploadedById: string;
+  /** Where the bytes live once uploaded; `null` for fixtures, which ship no binaries. */
+  readonly url: string | null;
 }
 
 export interface TaskComment {
@@ -262,11 +288,19 @@ export interface CalendarEventDraft {
 
 /* ============================== Notes ============================== */
 
-export type NotebookId = 'personal' | 'work' | 'ideas' | 'meetings';
+/**
+ * A note category ("دفترچه"). The four built-ins ship with every workspace and cannot be
+ * deleted; teams add their own, which can be removed once empty.
+ */
+export interface NoteCategory {
+  readonly id: string;
+  readonly label: string;
+  readonly builtIn: boolean;
+}
 
 export interface Note {
   readonly id: string;
-  readonly notebook: NotebookId;
+  readonly categoryId: string;
   readonly title: string;
   /** Markdown subset: headings, emphasis, bullet lists and `- [ ]` checklists. */
   readonly body: string;
@@ -281,7 +315,7 @@ export interface Note {
 export interface NotePatch {
   readonly title?: string;
   readonly body?: string;
-  readonly notebook?: NotebookId;
+  readonly categoryId?: string;
   readonly colors?: readonly TagTone[];
   readonly pinned?: boolean;
 }
@@ -315,9 +349,17 @@ export type NotificationFilterId = 'all' | 'unread' | 'mentions';
 
 /* ============================== Account & security ============================== */
 
-export interface Invitation {
+/** How an invitation reaches its recipient: by email, or by SMS to an Iranian mobile number. */
+export type InvitationChannel = 'email' | 'sms';
+
+export interface InvitationRecipient {
+  /** A lower-cased email address, or a mobile number normalised to `09xxxxxxxxx`. */
+  readonly address: string;
+  readonly channel: InvitationChannel;
+}
+
+export interface Invitation extends InvitationRecipient {
   readonly id: string;
-  readonly email: string;
   readonly role: RoleId;
   readonly department: DepartmentId;
   readonly message: string;

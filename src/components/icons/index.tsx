@@ -5,6 +5,7 @@
  * Nothing here is imported from a package: shipping ~60 inlined paths keeps the icon layer
  * tree-shakeable and removes a runtime dependency from the critical path.
  */
+import type { AttachmentKind } from '@/types';
 import { createIcon, type IconProps } from './createIcon';
 import { cn } from '@/lib/cn';
 
@@ -444,4 +445,32 @@ export const MobileIcon = createIcon('MobileIcon', {
 export const EyeSlashIcon = createIcon('EyeSlashIcon', {
   primary: ['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z', 'm4 4 16 16'],
   secondary: ['M12 15a3 3 0 0 1-3-3'],
+});
+
+/* ------------------------------- Media ------------------------------- */
+
+export const VideoIcon = createIcon('VideoIcon', {
+  primary: ['M3.5 7.5a2.5 2.5 0 0 1 2.5-2.5h8a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-2.5 2.5H6a2.5 2.5 0 0 1-2.5-2.5v-9Z'],
+  secondary: ['m16.5 10 4-2.5v9l-4-2.5'],
+});
+
+export const MusicIcon = createIcon('MusicIcon', {
+  primary: ['M9 18V5.5l11-2V16', 'M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z', 'M20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'],
+  secondary: ['M9 9.5l11-2'],
+});
+
+/** One glyph per attachment kind, shared by bubbles, the task inspector and the media drawer. */
+export const ATTACHMENT_ICONS = {
+  image: ImageIcon,
+  video: VideoIcon,
+  document: DocumentIcon,
+  sheet: SheetIcon,
+  archive: ArchiveIcon,
+  audio: MusicIcon,
+  link: LinkIcon,
+} as const satisfies Record<AttachmentKind, typeof ImageIcon>;
+
+export const FolderAddIcon = createIcon('FolderAddIcon', {
+  primary: ['M3.5 7a2 2 0 0 1 2-2h3.2a2 2 0 0 1 1.5.7l1.1 1.3h7.2a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7Z'],
+  secondary: ['M12 11v5.5M9.25 13.75h5.5'],
 });

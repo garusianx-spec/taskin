@@ -4,13 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ModuleId, PresenceState } from '@/types';
 import { MODULES, PRESENCE_OPTIONS } from '@/data/reference';
-import { WORKSPACE, WORKSPACES } from '@/data/workspace';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { Avatar, Button, CountPill, IconButton, Popover, PopoverDivider, Tooltip } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
+import { WorkspaceAvatar } from '@/components/workspace/WorkspaceAvatar';
+import { WorkspaceMenu } from '@/components/workspace/WorkspaceMenu';
 import { ThemePicker } from '@/components/theme/ThemePicker';
 import { QuickCreateMenu } from './QuickCreateMenu';
 import {
@@ -132,54 +133,21 @@ export function NavRail() {
 }
 
 function WorkspaceSwitcher() {
+  const { activeWorkspace } = useWorkspace();
   return (
     <Popover
       label="تعویض فضای کاری"
       align="start"
-      panelClassName="min-w-64"
+      haspopup="menu"
+      panelClassName="min-w-72"
       trigger={
-        <button
-          type="button"
-          className="flex size-11 items-center justify-center rounded-xl bg-brand-solid text-body-sm font-bold text-fg-on-brand shadow-xs transition-opacity hover:opacity-90"
-        >
-          <span aria-hidden="true">{WORKSPACE.initials}</span>
-          <span className="sr-only">{`فضای کاری فعال: ${WORKSPACE.name} — تعویض فضای کاری`}</span>
+        <button type="button" className="rounded-xl shadow-xs transition-opacity hover:opacity-90">
+          <WorkspaceAvatar workspace={activeWorkspace} size="md" />
+          <span className="sr-only">{`فضای کاری فعال: ${activeWorkspace.name} — تعویض فضای کاری`}</span>
         </button>
       }
     >
-      {(close) => (
-        <MenuList>
-          <p className="px-2.5 pb-1 pt-1.5 text-micro font-semibold uppercase tracking-wide text-fg-quaternary">
-            فضاهای کاری
-          </p>
-          {WORKSPACES.map((workspace) => {
-            const active = workspace.id === WORKSPACE.id;
-            return (
-              <MenuItem
-                key={workspace.id}
-                selected={active}
-                onSelect={close}
-                icon={
-                  <span className="flex size-7 items-center justify-center rounded-lg bg-sunken text-micro font-bold text-fg-secondary">
-                    {workspace.initials}
-                  </span>
-                }
-              >
-                <span className="flex flex-col">
-                  <span className="truncate">{workspace.name}</span>
-                  <span className="numeric text-micro font-normal text-fg-tertiary">
-                    {`${formatCount(workspace.memberCount)} عضو`}
-                  </span>
-                </span>
-              </MenuItem>
-            );
-          })}
-          <PopoverDivider />
-          <MenuItem onSelect={close} icon={<AddIcon size={18} />}>
-            ایجاد فضای کاری جدید
-          </MenuItem>
-        </MenuList>
-      )}
+      {(close) => <WorkspaceMenu close={close} />}
     </Popover>
   );
 }

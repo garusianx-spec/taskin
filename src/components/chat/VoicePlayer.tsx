@@ -12,6 +12,8 @@ export interface VoicePlayerProps {
   readonly src: string | null;
   readonly outgoing: boolean;
   readonly label: string;
+  /** `bubble` sizes the player for a chat bubble; `inline` fills its container (drawers). */
+  readonly variant?: 'bubble' | 'inline';
 }
 
 /**
@@ -23,7 +25,7 @@ export interface VoicePlayerProps {
  *                     `requestAnimationFrame` clock over the known duration. The user still
  *                     gets scrubbing and progress; only the audio output is absent.
  */
-export function VoicePlayer({ durationSec, waveform, src, outgoing, label }: VoicePlayerProps) {
+export function VoicePlayer({ durationSec, waveform, src, outgoing, label, variant = 'bubble' }: VoicePlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -104,7 +106,7 @@ export function VoicePlayer({ durationSec, waveform, src, outgoing, label }: Voi
   const remaining = Math.max(0, durationSec - elapsed);
 
   return (
-    <div className={cn('flex w-60 items-center gap-2.5 sm:w-72')}>
+    <div className={cn('flex items-center gap-2.5', variant === 'bubble' ? 'w-60 sm:w-72' : 'w-full min-w-0')}>
       {src && (
         <audio
           ref={audioRef}
@@ -168,7 +170,7 @@ export function VoicePlayer({ durationSec, waveform, src, outgoing, label }: Voi
           const ratio = (rect.right - event.clientX) / rect.width;
           seekTo(ratio);
         }}
-        className="flex h-9 flex-1 cursor-pointer items-center gap-[2px] rounded-md"
+        className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-[2px] overflow-hidden rounded-md"
       >
         {waveform.map((amplitude, index) => {
           const played = index / waveform.length <= progress;

@@ -11,7 +11,7 @@ import type {
   PermissionModuleDescriptor,
   RoleDescriptor,
   RoleId,
-  NotebookId,
+  NoteCategory,
   NotificationFilterId,
   PresenceState,
   SemanticTone,
@@ -22,10 +22,12 @@ import type {
 
 /* ------------------------------ Navigation ------------------------------ */
 
+/** Rail order: work first — tasks sit directly under the workspace home, chats beneath them. */
+
 export const MODULES: readonly ModuleDescriptor[] = [
   { id: 'feed', label: 'میز کار', href: '/feed' },
-  { id: 'chats', label: 'گفتگوها', href: '/chats' },
   { id: 'tasks', label: 'پروژه‌ها و وظایف', href: '/tasks' },
+  { id: 'chats', label: 'گفتگوها', href: '/chats' },
   { id: 'calendar', label: 'تقویم', href: '/calendar' },
   { id: 'notes', label: 'یادداشت‌ها', href: '/notes' },
   { id: 'directory', label: 'اعضای سازمان', href: '/directory' },
@@ -146,15 +148,15 @@ export const calendarEventKindLabel = (kind: CalendarEventKind): string =>
 
 /* ------------------------------ Notes ------------------------------ */
 
-export const NOTEBOOKS: ReadonlyArray<{ readonly id: NotebookId; readonly label: string }> = [
-  { id: 'personal', label: 'شخصی' },
-  { id: 'work', label: 'کاری' },
-  { id: 'ideas', label: 'ایده‌ها' },
-  { id: 'meetings', label: 'صورت‌جلسه‌ها' },
+export const BUILT_IN_NOTE_CATEGORIES: readonly NoteCategory[] = [
+  { id: 'personal', label: 'شخصی', builtIn: true },
+  { id: 'work', label: 'کاری', builtIn: true },
+  { id: 'ideas', label: 'ایده‌ها', builtIn: true },
+  { id: 'meetings', label: 'صورت‌جلسه‌ها', builtIn: true },
 ];
 
-export const notebookLabel = (notebook: NotebookId): string =>
-  NOTEBOOKS.find((entry) => entry.id === notebook)?.label ?? notebook;
+/** Where a note goes when it is created under "همه". */
+export const DEFAULT_NOTE_CATEGORY_ID = 'personal';
 
 /* ------------------------------ Notifications ------------------------------ */
 
@@ -174,6 +176,19 @@ export const CHAT_FILTERS: ReadonlyArray<{ readonly id: ChatFilterId; readonly l
   { id: 'direct', label: 'شخصی' },
   { id: 'groups', label: 'گروه‌ها' },
   { id: 'unread', label: 'خوانده‌نشده' },
+];
+
+/* ------------------------------ Reactions ------------------------------ */
+
+/** The quick-reaction palette, shared by the desktop hover bar and the mobile action sheet. */
+export const QUICK_REACTIONS: ReadonlyArray<{ readonly emoji: string; readonly label: string }> = [
+  { emoji: '👍', label: 'پسندیدم' },
+  { emoji: '❤️', label: 'قلب' },
+  { emoji: '🔥', label: 'عالی' },
+  { emoji: '🙏', label: 'سپاس' },
+  { emoji: '✅', label: 'انجام شد' },
+  { emoji: '👀', label: 'در حال بررسی' },
+  { emoji: '👎', label: 'نپسندیدم' },
 ];
 
 /* ------------------------------ RBAC vocabulary ------------------------------ */

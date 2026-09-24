@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState, type KeyboardEvent } from 'react';
-import type { Note, NotePatch, Task } from '@/types';
-import { NOTEBOOKS, TAG_TONES, notebookLabel } from '@/data/reference';
+import { useRef, useState } from 'react';
+import type { Note, NoteCategory, NotePatch, Task } from '@/types';
+import { TAG_TONES } from '@/data/reference';
+import { noteCategoryLabel } from '@/store/selectors';
 import { cn } from '@/lib/cn';
 import { formatFraction } from '@/lib/format';
 import { TAG_DOT } from '@/lib/tag-tone';
@@ -33,9 +34,11 @@ import {
   TrashIcon,
 } from '@/components/icons';
 import { NoteMarkdown } from './NoteMarkdown';
+import { NoteBlockEditor, type NoteBlockEditorHandle } from './NoteBlockEditor';
 
 export interface NoteEditorProps {
   readonly note: Note;
+  readonly categories: readonly NoteCategory[];
   readonly linkedTask: Task | undefined;
   readonly onPatch: (patch: NotePatch) => void;
   readonly onDelete: () => void;
@@ -47,84 +50,17 @@ export interface NoteEditorProps {
 
 type Mode = 'edit' | 'preview';
 
-/** Continues `- `, `1. ` and `- [ ] ` prefixes on Enter; an empty item ends the list. */
-const LIST_PREFIX = /^(\s*)([-*] \[[ xX]\] |[-*] |(\d+)[.)] )/;
-
 /**
- * Note editor. Writes Markdown in "ویرایش"; "پیش‌نمایش" renders it with live checklist
- * boxes. Every keystroke is saved to workspace state, so there is no save button to forget.
+ * Note editor. "ویرایش" edits text as Markdown and checklists as real checkboxes (see
+ * `NoteBlockEditor`); "پیش‌نمایش" renders headings and emphasis with the same live boxes.
+ * Every keystroke is saved to workspace state, so there is no save button to forget.
  */
-export function NoteEditor({ note, linkedTask, onPatch, onDelete, onConvertToTask, onOpenTask, onBack }: NoteEditorProps) {
+export function NoteEditor({ note, categories, linkedTask, onPatch, onDelete, onConvertToTask, onOpenTask, onBack }: NoteEditorProps) {
   const [mode, setMode] = useState<Mode>(() => (note.body.trim() ? 'preview' : 'edit'));
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const blocksRef = useRef<NoteBlockEditorHandle | null>(null);
   const id = useNamespacedId('note-');
   const progress = checklistProgress(note.body);
   const isBlank = !note.title && !note.body;
-
-  /** Replaces `[start, end)` of the body and puts the caret/selection where asked. */
-  const splice = (start: number, end: number, insert: string, selectFrom: number, selectTo: number) => {
-    const body = note.body.slice(0, start) + insert + note.body.slice(end);
-    onPatch({ body });
-    requestAnimationFrame(() => {
-      const element = textareaRef.current;
-      if (!element) return;
-      element.focus();
-      element.setSelectionRange(selectFrom, selectTo);
-    });
-  };
-
-  const wrap = (marker: string, placeholder: string) => {
-    const element = textareaRef.current;
-    if (!element) return;
-    const { selectionStart: start, selectionEnd: end } = element;
-    const selected = note.body.slice(start, end) || placeholder;
-    splice(start, end, `${marker}${selected}${marker}`, start + marker.length, start + marker.length + selected.length);
-  };
-
-  const prefixLines = (prefix: string) => {
-    const element = textareaRef.current;
-    if (!element) return;
-    const { selectionStart, selectionEnd } = element;
-    const lineStart = note.body.lastIndexOf('\n', selectionStart - 1) + 1;
-    const lineEndIndex = note.body.indexOf('\n', selectionEnd);
-    const lineEnd = lineEndIndex === -1 ? note.body.length : lineEndIndex;
-    const block = note.body.slice(lineStart, lineEnd);
-    const lines = block.split('\n');
-    // Toggle: if every line already carries the prefix, remove it.
-    const allPrefixed = lines.every((line) => line.startsWith(prefix));
-    const next = lines.map((line) => (allPrefixed ? line.slice(prefix.length) : `${prefix}${line}`)).join('\n');
-    splice(lineStart, lineEnd, next, lineStart, lineStart + next.length);
-  };
-
-  const onTextareaKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.ctrlKey || event.metaKey) && (event.key === 'b' || event.key === 'i')) {
-      event.preventDefault();
-      if (event.key === 'b') wrap('**', 'متن پررنگ');
-      else wrap('*', 'متن مورب');
-      return;
-    }
-    if (event.key !== 'Enter' || event.shiftKey) return;
-
-    const element = event.currentTarget;
-    const { selectionStart, selectionEnd, value } = element;
-    if (selectionStart !== selectionEnd) return;
-    const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
-    const line = value.slice(lineStart, selectionStart);
-    const match = LIST_PREFIX.exec(line);
-    if (!match) return;
-
-    event.preventDefault();
-    const [prefix, indent = '', marker = '', number] = match;
-    if (line.slice(prefix.length).trim() === '') {
-      // Enter on an empty item leaves the list.
-      splice(lineStart, selectionStart, '', lineStart, lineStart);
-      return;
-    }
-    const nextMarker = number !== undefined ? `${Number(number) + 1}. ` : marker.replace(/\[[xX]\]/, '[ ]');
-    const insert = `\n${indent}${nextMarker}`;
-    const caret = selectionStart + insert.length;
-    splice(selectionStart, selectionStart, insert, caret, caret);
-  };
 
   return (
     <article aria-labelledby={`${id}-title-label`} className="flex h-full min-h-0 flex-col bg-surface">
@@ -139,11 +75,11 @@ export function NoteEditor({ note, linkedTask, onPatch, onDelete, onConvertToTas
         {/* `Select` fills its container, so the container sets the width. */}
         <div className="w-40 shrink-0">
           <Select
-            label="دفترچه"
+            label="دسته"
             size="sm"
-            value={note.notebook}
-            onValueChange={(notebook) => onPatch({ notebook })}
-            options={NOTEBOOKS.map((entry) => ({ value: entry.id, label: entry.label }))}
+            value={note.categoryId}
+            onValueChange={(categoryId) => onPatch({ categoryId })}
+            options={categories.map((category) => ({ value: category.id, label: category.label }))}
           />
         </div>
         <Tooltip content={note.pinned ? 'برداشتن سنجاق' : 'سنجاق کردن'}>
@@ -244,7 +180,7 @@ export function NoteEditor({ note, linkedTask, onPatch, onDelete, onConvertToTas
               if (event.key === 'Enter') {
                 event.preventDefault();
                 setMode('edit');
-                requestAnimationFrame(() => textareaRef.current?.focus());
+                requestAnimationFrame(() => blocksRef.current?.focus());
               }
             }}
             placeholder="عنوان یادداشت"
@@ -254,7 +190,7 @@ export function NoteEditor({ note, linkedTask, onPatch, onDelete, onConvertToTas
           />
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-caption text-fg-tertiary">
-            <span>{notebookLabel(note.notebook)}</span>
+            <span>{noteCategoryLabel(categories, note.categoryId)}</span>
             <span aria-hidden="true">،</span>
             <span className="numeric">
               {'آخرین ویرایش '}
@@ -301,25 +237,18 @@ export function NoteEditor({ note, linkedTask, onPatch, onDelete, onConvertToTas
             />
             {mode === 'edit' && (
               <div role="toolbar" aria-label="قالب‌بندی متن" className="flex items-center gap-0.5">
-                <IconButton label="تیتر" icon={<HeadingIcon size={16} />} size="sm" onClick={() => prefixLines('## ')} />
-                <IconButton label="پررنگ (Ctrl+B)" icon={<BoldIcon size={16} />} size="sm" onClick={() => wrap('**', 'متن پررنگ')} />
-                <IconButton label="مورب (Ctrl+I)" icon={<ItalicIcon size={16} />} size="sm" onClick={() => wrap('*', 'متن مورب')} />
-                <IconButton label="فهرست نشانه‌دار" icon={<ListIcon size={16} />} size="sm" onClick={() => prefixLines('- ')} />
-                <IconButton label="چک‌لیست" icon={<ChecklistIcon size={16} />} size="sm" onClick={() => prefixLines('- [ ] ')} />
+                {/* `onMouseDown` keeps focus (and the caret) in the note while a button is pressed. */}
+                <IconButton label="تیتر" icon={<HeadingIcon size={16} />} size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => blocksRef.current?.prefixLines('## ')} />
+                <IconButton label="پررنگ (Ctrl+B)" icon={<BoldIcon size={16} />} size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => blocksRef.current?.wrap('**', 'متن پررنگ')} />
+                <IconButton label="مورب (Ctrl+I)" icon={<ItalicIcon size={16} />} size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => blocksRef.current?.wrap('*', 'متن مورب')} />
+                <IconButton label="فهرست نشانه‌دار" icon={<ListIcon size={16} />} size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => blocksRef.current?.prefixLines('- ')} />
+                <IconButton label="چک‌لیست" icon={<ChecklistIcon size={16} />} size="sm" onMouseDown={(event) => event.preventDefault()} onClick={() => blocksRef.current?.insertChecklistItem()} />
               </div>
             )}
           </div>
 
           {mode === 'edit' ? (
-            <textarea
-              ref={textareaRef}
-              aria-label="متن یادداشت"
-              value={note.body}
-              onChange={(event) => onPatch({ body: event.target.value })}
-              onKeyDown={onTextareaKeyDown}
-              placeholder={'متن یادداشت را بنویسید…\n\n- [ ] برای چک‌لیست از «- [ ]» استفاده کنید'}
-              className="min-h-[45vh] w-full resize-none rounded-lg border border-secondary bg-surface p-3.5 text-body leading-7 text-fg-primary placeholder:text-fg-placeholder focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-0"
-            />
+            <NoteBlockEditor ref={blocksRef} initialBody={note.body} onChange={(body) => onPatch({ body })} />
           ) : note.body.trim() ? (
             <NoteMarkdown
               source={note.body}

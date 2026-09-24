@@ -184,18 +184,19 @@ src/
 │   ├── icons/              # ~60 hand-authored Iconsax-style glyphs
 │   ├── overlays/           # OverlayProvider (global dialog store) + OverlayHost
 │   ├── layout/             # AppShell, NavRail, TopAppBar, BottomNav, QuickCreate, search
-│   ├── chat/               # ChatView, MessageBubble, VoicePlayer, composer, new-chat dialog
+│   ├── chat/               # ChatView, MessageBubble, VoicePlayer, composer, shared-media tabs
 │   ├── tasks/              # Kanban, List, Gantt, Inspector, Jalali date picker, swipe rows
 │   ├── calendar/           # Month grid, day summary, event dialog
-│   ├── notes/              # Notebook sidebar, editor, Markdown renderer
+│   ├── notes/              # Category sidebar, block editor with live checklists, Markdown renderer
 │   ├── notifications/      # Notification centre drawer
 │   ├── account/            # Profile, security & sign-in, sign-out dialogs
-│   ├── directory/          # Invite dialog
+│   ├── directory/          # Invite dialog (email or Iranian mobile)
+│   ├── workspace/          # Switcher menu, create / settings / delete-workspace dialogs
 │   ├── rbac/               # Permission matrix + advanced editing modal
 │   └── theme/              # ThemeProvider, ThemePicker
 ├── data/                   # Typed reference data + seed workspace fixture
 ├── hooks/                  # focus trap, scroll lock, roving focus, media query, clock
-├── lib/                    # jalali, formatting, cn, theme bootstrap
+├── lib/                    # jalali, formatting, contact parsing, link metadata, note blocks, theme
 ├── store/                  # Pure reducer + selectors + container provider
 ├── styles/                 # fonts.css, tokens.css
 └── types/                  # The whole domain model
@@ -221,25 +222,67 @@ inspector, because that docks into the layout rather than floating over it.
 
 ## Modules
 
+Navigation runs میز کار → پروژه‌ها و وظایف → گفتگوها → تقویم → یادداشت‌ها → اعضای سازمان on
+the rail, and میز کار · وظایف من · گفتگوها · تقویم · بیشتر on the mobile tab bar.
+
+- **Workspaces** — the switcher (rail badge on desktop, top bar on mobile, «بیشتر» on phones)
+  lists every workspace. «ایجاد فضای کاری جدید» asks for a name, an optional description and
+  an icon: an uploaded image (read locally as a data URL, images only, ≤1MB) or, without one,
+  a two-letter monogram generated from the name on a chosen colour. The new workspace is
+  registered and becomes active at once. Each workspace owns its own tasks, columns, chats,
+  events, notes, notifications, invitations and activity; switching parks the current slices
+  and restores the target's, while the account, profile, permissions and theme carry across.
+  «تنظیمات فضای کاری» shows the owner and a danger zone: only the **Owner** can delete, never
+  the last workspace, and only after typing the workspace's exact name and ticking an
+  acknowledgement in a dialog that ignores overlay clicks.
+- **Feed** — summary cards, progress, «نیاز به اقدام شما» with a quick-complete checkbox per
+  task (a task ticked here stays listed, struck through, so it can be unticked in place) and
+  the workspace's recent activity.
+- **Chats** — messages append at the tail and the thread follows them with a smooth scroll;
+  a conversation always opens at its newest message. Date dividers (امروز / دیروز / weekday)
+  sit in the message flow rather than floating. Seven quick reactions (👍 ❤️ 🔥 🙏 ✅ 👀 👎)
+  toggle per member, with counter pills that ring the ones you added. Clicking the header
+  title opens the details panel, whose «رسانه‌های مشترک» section is split into tabs with
+  counts and empty states: files and documents (size, time, download), photos and videos (a
+  grid with a preview dialog), audio (an inline mini player with a scrubber) and links (site,
+  title and host, parsed from message text).
 - **Tasks** — board, list and Jalali Gantt. The board's columns live in state: the four
-  built-ins plus any added from the dashed «افزودن ستون جدید» card (name + accent colour).
-  Custom columns take part in drag and drop and keyboard moves; tasks in them count as
+  built-ins plus any added from the dashed «افزودن ستون جدید» card (name + accent colour),
+  which scrolls the board to its far (left, in RTL) end and focuses the name field. Every
+  column's ⋮ menu renames it inline or deletes it: an empty column goes at once; one with
+  cards asks whether to move them to another column or archive them. The last column can
+  never be deleted, and a task whose column disappears falls back to the first one rather
+  than going missing. Search lives in the page header as an expanding icon next to «وظیفه
+  جدید». Custom columns take part in drag and drop and keyboard moves; tasks in them count as
   in progress. Every card and row has a quick-complete checkbox: checking moves the task to
   «انجام شد» with a struck-through, muted title; unchecking returns it to the column it came
   from (or «برای انجام» when it has no history). The list view collects completed work in a
   collapsible group. In the Gantt, the task column is `sticky` on the inline-start edge and
   opaque (`z-20`) so bars (`z-10`) slide beneath it over the grid lines (`z-0`), under a
   sticky header (`z-30`).
-- **Calendar** — deadlines, meetings, reminders and project milestones only. A day shows at
-  most two badges; the rest fold into «+X مورد دیگر», which opens the day summary. Clicking
+- **Calendar** — deadlines, meetings, reminders and project milestones only. One toolbar sits
+  above the grid: the legend, then the month navigation (previous, month, next, امروز)
+  centred on the grid, then «رویداد جدید». A day shows at most two badges; the rest fold into «+X مورد دیگر», which opens the day summary. Clicking
   any day opens the task composer with that Jalali date as the deadline. Deadlines are derived
   from live tasks, never stored twice.
-- **Notes** — notebooks (شخصی، کاری، ایده‌ها، صورت‌جلسه‌ها), a pinned shelf and colour-tag
-  filters beside a Markdown editor with live checklists. «تبدیل یادداشت به وظیفه» opens the
+- **Notes** — the list header is the action hub: an expanding search, a folder-plus button
+  that creates a category, and the primary «جدید». Below it, horizontally scrolling category
+  chips («همه» first and active by default; custom categories with no notes carry a delete
+  ✕). A new note lands in the active category, and the editor has a category switcher. In
+  edit mode, `- [ ]` / `- [x]` lines render as real checkboxes with inline text inputs —
+  Enter adds the next item, Backspace on an empty one leaves the list, typing `[] ` starts
+  one — and everything is stored back as plain Markdown. A pinned shelf and colour-tag
+  filters sit in the sidebar. «تبدیل یادداشت به وظیفه» opens the
   composer pre-filled; open checklist items become subtasks and the note links to the task.
 - **Notification centre** — a drawer from the rail bell with همه / خوانده‌نشده / اشاره‌ها
   tabs, actor avatars, relative Jalali times, per-item and bulk mark-as-read; a card opens its
   task or conversation.
+- **Invitations** — one field takes emails and Iranian mobile numbers together. Each entry is
+  classified as it is committed: a mobile number in any common form (`09…`, `+98…`, `0098…`,
+  grouped with spaces or dashes, Persian or Latin digits) is normalised to `09xxxxxxxxx` and
+  invited by SMS; an email is invited by email. Chips and the pending queue carry an envelope
+  or handset icon, existing members and pending invitations are flagged per entry, and a
+  space inside a half-typed number groups digits instead of committing it.
 - **Account** — the profile menu opens «پروفایل من» (presence and status line), «امنیت و
   ورود» (password change with strength meter, SMS two-step sign-in, active sessions) and a
   sign-out confirmation that clears the session state and routes to `/signed-out`.
@@ -263,7 +306,7 @@ All domain unions are closed and exhaustively switched with a `const exhaustive:
 guard, so adding a member surfaces as a compile error rather than a runtime fallthrough:
 `RoleId`, `PermissionModuleId`, `PermissionActionId`, `TaskStatus`, `TaskPriority`,
 `MessageBody`, `ThemeMode`, `AccentId`, `SmartViewId`, `ChatFilterId`, `NotificationEvent`,
-`NotificationFilterId`, `CalendarEventKind`, `NotebookId`, `TagTone`, `Overlay`.
+`NotificationFilterId`, `CalendarEventKind`, `TagTone`, `Overlay`.
 
 ---
 
@@ -287,7 +330,8 @@ guard, so adding a member surfaces as a compile error rather than a runtime fall
   and printable-character type-ahead.
 - The permission matrix labels each switch by the intersection it controls, so a screen
   reader announces "بوردها و پروژه‌ها — ویرایش، روشن" rather than an anonymous toggle.
-  Master switches report `aria-checked="mixed"` and park their knob mid-track.
+  Master switches report `aria-checked="mixed"`; the knob stays fully at the off end (never
+  mid-track, in either direction) and shows a dash, so a partial state reads as partial.
 - Icon-only controls require a `label` prop at the type level.
 - Tables use `<caption>`, `scope` and `aria-sort`.
 - A skip link targets `#workspace-main`; `prefers-reduced-motion` disables all animation.
@@ -301,9 +345,9 @@ the inline-end (right) edge, 300px contextual sidebar, fluid workspace, and a 38
 collapsible inspector. Kanban columns share the available width and only scroll once they hit
 their minimum, so all four fit at 1440px with the inspector closed.
 
-**Mobile (375–414px)** — top app bar (quick create, search, notifications), five fixed bottom
-tabs (میز کار · گفتگوها · وظایف من · تقویم · بیشتر — notes and account actions live under
-بیشتر) and per-route adaptation: the chat list pushes to a detail view, and the task
+**Mobile (375–414px)** — top app bar (workspace switcher, quick create, search,
+notifications), five fixed bottom tabs (میز کار · وظایف من · گفتگوها · تقویم · بیشتر — notes
+and account actions live under بیشتر) and per-route adaptation: the chat list pushes to a detail view, and the task
 list becomes a swipeable single column with the contextual sidebar behind a فیلترها toggle.
 Swipe right completes a task, swipe left opens postpone/reassign. Long-pressing a chat bubble
 opens a sheet whose primary action is «تبدیل مستقیم به وظیفه», pre-filling the composer with
@@ -322,12 +366,18 @@ no backend. Two consequences worth stating plainly:
   duration); with `src: null` — the state of a recording that is still uploading — it runs a
   `requestAnimationFrame` clock over the known duration so scrubbing and progress still work.
   The seed data uses the second path.
+- **Shared files have no binaries.** Attachments carry `url: null`, so «دانلود» saves a small
+  text receipt named after the file; an attachment with a real `url` downloads it directly.
+  Media previews are drawn from the file's kind and name.
+- **Workspace icons stay in memory.** An uploaded icon is kept as a data URL in state and is
+  never sent anywhere; invitations likewise record the channel (email or SMS) without sending.
 - **Avatars are generated initials**, not uploaded images, so no binary assets ship in the
   repository. `AvatarTone` selects from the neutral and status ramps rather than the brand
   ramp, so members stay distinguishable when the workspace accent changes.
 
-State changes (moving cards, adding columns, editing permissions, sending messages, creating
-tasks, events, notes and invitations) are real and flow through the reducer; they reset on
+State changes (moving cards, adding, renaming and deleting columns, archiving tasks, editing
+permissions, sending messages, creating tasks, events, notes, categories, invitations and
+workspaces) are real and flow through the reducer; they reset on
 reload because nothing is persisted except the theme. By the same token the account flows are
 front-end only: the password form validates locally and records the change time, and signing
 out resets the in-memory session — a full reload starts a fresh signed-in session.

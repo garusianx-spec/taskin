@@ -108,35 +108,48 @@ function CalendarContent() {
 
   return (
     <div className="scrollbar-thin h-full overflow-y-auto">
-      <header className="flex flex-wrap items-center gap-3 border-b border-secondary bg-surface px-4 py-3 sm:px-6">
-        <div className="flex flex-col">
-          <h1 className="text-heading-sm font-bold text-fg-primary">تقویم</h1>
-          <span className="numeric text-caption text-fg-tertiary" aria-live="polite">
-            {`${formatJalali(monthIso, 'month-year')}، ${formatCount(monthItemCount)} مورد برنامه‌ریزی‌شده`}
-          </span>
-        </div>
-        <div className="ms-auto flex items-center gap-1.5">
-          <IconButton label="ماه قبل" icon={<ChevronBackwardIcon size={18} />} onClick={() => step(-1)} />
-          <Button size="sm" variant="secondary" onClick={() => focusDate(todayIso)}>
-            امروز
-          </Button>
-          <IconButton label="ماه بعد" icon={<ChevronForwardIcon size={18} />} onClick={() => step(1)} />
-          <Button
-            size="sm"
-            iconStart={<AddIcon size={16} />}
-            aria-haspopup="dialog"
-            onClick={() => createEvent(focusedIso)}
-            className="ms-1.5"
-          >
-            <span className="hidden sm:inline">رویداد جدید</span>
-            <span className="sm:hidden">رویداد</span>
-          </Button>
-        </div>
+      <header className="border-b border-secondary bg-surface px-4 py-3 sm:px-6">
+        <h1 className="text-heading-sm font-bold text-fg-primary">تقویم</h1>
+        <span className="numeric text-caption text-fg-tertiary">
+          {`${formatCount(monthItemCount)} مهلت، جلسه و نقطه عطف در ${formatJalali(monthIso, 'month-year')}`}
+        </span>
       </header>
 
       <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[1fr_20rem]">
         <section aria-label="نمای ماهانه" className="flex min-w-0 flex-col gap-3">
-          <Legend />
+          {/*
+            One baseline for the whole bar. The two outer groups share the leftover width
+            equally (`flex-1`), so the date controls sit exactly over the grid's centre
+            whatever the legend or the button measure.
+          */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1">
+              <Legend />
+            </div>
+            <div role="group" aria-label="پیمایش ماه" className="flex items-center gap-1.5">
+              <IconButton label="ماه قبل" icon={<ChevronBackwardIcon size={18} />} onClick={() => step(-1)} />
+              <span
+                className="numeric min-w-24 text-center text-title-sm font-bold text-fg-primary"
+                aria-live="polite"
+              >
+                {formatJalali(monthIso, 'month-year')}
+              </span>
+              <IconButton label="ماه بعد" icon={<ChevronForwardIcon size={18} />} onClick={() => step(1)} />
+              <Button size="sm" variant="secondary" onClick={() => focusDate(todayIso)} className="ms-1">
+                امروز
+              </Button>
+            </div>
+            <div className="flex sm:flex-1 sm:justify-end">
+              <Button
+                size="sm"
+                iconStart={<AddIcon size={16} />}
+                aria-haspopup="dialog"
+                onClick={() => createEvent(focusedIso)}
+              >
+                رویداد جدید
+              </Button>
+            </div>
+          </div>
           <div className="overflow-visible rounded-xl border border-secondary bg-surface shadow-xs">
             <MonthGrid
               cells={cells}
@@ -173,7 +186,7 @@ function Legend() {
     { label: 'نقطه عطف', Icon: MilestoneIcon, tone: 'bg-status-done-subtle text-status-done' },
   ] as const;
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="راهنمای رنگ‌ها">
+    <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5" aria-label="راهنمای رنگ‌ها">
       {entries.map(({ label, Icon, tone }) => (
         <li key={label} className="flex items-center gap-1.5 text-caption text-fg-tertiary">
           <span className={cn('flex size-5 items-center justify-center rounded-md', tone)} aria-hidden="true">

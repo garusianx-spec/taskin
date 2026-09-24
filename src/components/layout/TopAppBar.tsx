@@ -2,12 +2,12 @@
 
 import { usePathname } from 'next/navigation';
 import { MODULES } from '@/data/reference';
-import { WORKSPACE, WORKSPACES } from '@/data/workspace';
 import { formatCount } from '@/lib/format';
 import { useWorkspace } from '@/store/WorkspaceProvider';
 import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { CountPill, IconButton, Popover } from '@/components/ui';
-import { MenuItem, MenuList } from '@/components/ui/Menu';
+import { WorkspaceAvatar } from '@/components/workspace/WorkspaceAvatar';
+import { WorkspaceMenu } from '@/components/workspace/WorkspaceMenu';
 import { QuickCreateMenu } from './QuickCreateMenu';
 import { AddIcon, ChevronDownIcon, NotificationIcon, SearchIcon } from '@/components/icons';
 
@@ -17,7 +17,7 @@ import { AddIcon, ChevronDownIcon, NotificationIcon, SearchIcon } from '@/compon
  */
 export function TopAppBar() {
   const pathname = usePathname();
-  const { unreadNotifications } = useWorkspace();
+  const { unreadNotifications, activeWorkspace } = useWorkspace();
   const { active, open } = useOverlays();
   const activeModule = MODULES.find((module) => pathname.startsWith(module.href));
 
@@ -26,18 +26,17 @@ export function TopAppBar() {
       <Popover
         label="تعویض فضای کاری"
         align="start"
-        panelClassName="min-w-60"
+        haspopup="menu"
+        panelClassName="min-w-72"
         trigger={
           <button
             type="button"
             className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-start transition-colors hover:bg-hover"
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-solid text-micro font-bold text-fg-on-brand">
-              {WORKSPACE.initials}
-            </span>
+            <WorkspaceAvatar workspace={activeWorkspace} size="sm" className="size-8" />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-body-sm font-bold leading-tight text-fg-primary">
-                {WORKSPACE.name}
+                {activeWorkspace.name}
               </span>
               <span className="truncate text-micro leading-tight text-fg-tertiary">
                 {activeModule?.label ?? 'فضای کاری'}
@@ -47,27 +46,7 @@ export function TopAppBar() {
           </button>
         }
       >
-        {(close) => (
-          <MenuList>
-            {WORKSPACES.map((workspace) => (
-              <MenuItem
-                key={workspace.id}
-                selected={workspace.id === WORKSPACE.id}
-                onSelect={close}
-                icon={
-                  <span className="flex size-7 items-center justify-center rounded-lg bg-sunken text-micro font-bold text-fg-secondary">
-                    {workspace.initials}
-                  </span>
-                }
-              >
-                {workspace.name}
-              </MenuItem>
-            ))}
-            <MenuItem onSelect={close} icon={<AddIcon size={18} />}>
-              ایجاد فضای کاری جدید
-            </MenuItem>
-          </MenuList>
-        )}
+        {(close) => <WorkspaceMenu close={close} />}
       </Popover>
 
       <div className="flex-1" />

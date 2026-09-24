@@ -5,9 +5,9 @@ import { BottomSheet } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { messagePreview } from '@/store/selectors';
 import { truncate } from '@/lib/format';
+import { QUICK_REACTIONS } from '@/data/reference';
 import { ConvertToTaskIcon, CopyIcon, PinIcon, ReplyIcon } from '@/components/icons';
 
-const QUICK_REACTIONS = ['👍', '🙏', '🔥', '✅', '👀'] as const;
 
 export interface MessageActionSheetProps {
   readonly message: Message | null;
@@ -37,16 +37,16 @@ export function MessageActionSheet({
       title="اقدام روی پیام"
       description={truncate(messagePreview(message), 80)}
     >
-      <div className="mb-2 flex justify-between gap-1 px-2 pb-2">
-        {QUICK_REACTIONS.map((emoji) => (
+      <div role="group" aria-label="واکنش سریع" className="mb-2 grid grid-cols-7 gap-1 px-2 pb-2">
+        {QUICK_REACTIONS.map(({ emoji, label }) => (
           <button
             key={emoji}
             type="button"
-            aria-label={`واکنش ${emoji}`}
+            aria-label={`واکنش ${label}`}
             onClick={() => onToggleReaction(message.id, emoji)}
-            className="flex size-11 items-center justify-center rounded-full bg-sunken text-heading-sm transition-colors active:bg-active"
+            className="flex aspect-square items-center justify-center rounded-full bg-sunken text-heading-sm leading-none transition-colors active:bg-active"
           >
-            {emoji}
+            <span aria-hidden="true">{emoji}</span>
           </button>
         ))}
       </div>

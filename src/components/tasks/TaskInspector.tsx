@@ -25,30 +25,19 @@ import { JalaliDatePicker } from './JalaliDatePicker';
 import { ColumnDot } from './ColumnDot';
 import type { TaskPatch } from '@/store/workspace-reducer';
 import {
-  ArchiveIcon,
   CloseIcon,
-  DocumentIcon,
   DownloadIcon,
   FlagIcon,
-  ImageIcon,
   MessagesIcon,
   PaperclipIcon,
   SendIcon,
-  SheetIcon,
   StarFilledIcon,
   StarIcon,
   TrashIcon,
   UserAddIcon,
+  ATTACHMENT_ICONS,
 } from '@/components/icons';
 
-const ATTACHMENT_ICONS = {
-  image: ImageIcon,
-  document: DocumentIcon,
-  sheet: SheetIcon,
-  archive: ArchiveIcon,
-  audio: DocumentIcon,
-  link: DocumentIcon,
-} as const;
 
 export interface TaskInspectorProps {
   readonly task: Task;

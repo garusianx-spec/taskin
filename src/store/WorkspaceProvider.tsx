@@ -9,7 +9,7 @@ import {
   type Dispatch,
   type ReactNode,
 } from 'react';
-import type { Conversation, User } from '@/types';
+import type { Conversation, User, Workspace } from '@/types';
 import { CURRENT_USER } from '@/data/workspace';
 import { workspaceReducer, type WorkspaceAction, type WorkspaceState } from './workspace-reducer';
 import { INITIAL_WORKSPACE_STATE } from './initial-state';
@@ -18,6 +18,9 @@ interface WorkspaceContextValue {
   readonly state: WorkspaceState;
   readonly dispatch: Dispatch<WorkspaceAction>;
   readonly currentUser: User;
+  readonly activeWorkspace: Workspace;
+  /** True when the signed-in member is the active workspace's Owner. */
+  readonly isWorkspaceOwner: boolean;
   readonly conversations: readonly Conversation[];
   /** Unread count with local "mark as read" applied on top of the seed value. */
   readonly unreadFor: (conversationId: string) => number;
@@ -71,11 +74,20 @@ export function WorkspaceProvider({ children }: { readonly children: ReactNode }
     [state.profile.presence],
   );
 
+  const activeWorkspace = useMemo<Workspace>(() => {
+    const found = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
+    // The reducer never removes the active workspace without activating another.
+    if (!found) throw new Error(`Active workspace ${state.activeWorkspaceId} is missing.`);
+    return found;
+  }, [state.workspaces, state.activeWorkspaceId]);
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       state,
       dispatch,
       currentUser,
+      activeWorkspace,
+      isWorkspaceOwner: activeWorkspace.ownerId === currentUser.id,
       conversations: state.conversations,
       unreadFor,
       isPinned,
@@ -83,7 +95,7 @@ export function WorkspaceProvider({ children }: { readonly children: ReactNode }
       totalUnread,
       unreadNotifications,
     }),
-    [state, currentUser, unreadFor, isPinned, isMuted, totalUnread, unreadNotifications],
+    [state, currentUser, activeWorkspace, unreadFor, isPinned, isMuted, totalUnread, unreadNotifications],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
