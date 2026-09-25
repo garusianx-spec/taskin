@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { CalendarEventDraft, CalendarEventKind } from '@taskin/contracts';
 import { CALENDAR_EVENT_KINDS } from '@/data/reference';
 import { PROJECTS, USERS } from '@/data/workspace';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { formatJalali, toISODate, toPersianDigits } from '@taskin/jalali';
 import { Avatar, Button, Checkbox, Input, Modal, SegmentedControl, Select, Textarea } from '@/components/ui';
 import { JalaliDatePicker } from '@/components/tasks/JalaliDatePicker';
@@ -63,11 +64,14 @@ export function CalendarEventModal({ open, initialDate, currentUserId, onClose, 
   const [form, setForm] = useState<FormState>(() => blankForm(toISODate(new Date()), currentUserId));
   const [touched, setTouched] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setForm(blankForm(initialDate ?? toISODate(new Date()), currentUserId));
-    setTouched(false);
-  }, [open, initialDate, currentUserId]);
+  useResetOnOpen(
+    open,
+    () => {
+      setForm(blankForm(initialDate ?? toISODate(new Date()), currentUserId));
+      setTouched(false);
+    },
+    initialDate,
+  );
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((current) => ({ ...current, [key]: value }));

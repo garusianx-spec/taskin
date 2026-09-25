@@ -9,6 +9,7 @@ import { formatCount } from '@/lib/format';
 import { TAG_DOT, TAG_STRIPE } from '@/lib/tag-tone';
 import { columnForTask, tasksInColumn } from '@/store/selectors';
 import { useNamespacedId } from '@/hooks/useId';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { useRovingFocus } from '@/hooks/useRovingFocus';
 import { Badge, Button, EmptyState, IconButton, Input, Modal, Popover, Select, Tooltip } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
@@ -447,15 +448,19 @@ function DeleteColumnDialog({ column, columns, load, onClose, onConfirm }: Delet
   const [targetId, setTargetId] = useState('');
   const id = useNamespacedId('delete-column-');
 
-  useEffect(() => {
-    if (!column) return;
-    setChoice('migrate');
-    // Default to a column that keeps the cards' status (a custom column's cards are in
-    // progress), so migrating never silently completes or reopens work; else a neighbour.
-    const index = columns.findIndex((entry) => entry.id === column.id);
-    const sameStatus = columns.find((entry) => entry.id !== column.id && entry.status === column.status);
-    setTargetId((sameStatus ?? columns[index - 1] ?? columns[index + 1])?.id ?? '');
-  }, [column, columns]);
+  useResetOnOpen(
+    column !== null,
+    () => {
+      if (!column) return;
+      setChoice('migrate');
+      // Default to a column that keeps the cards' status (a custom column's cards are in
+      // progress), so migrating never silently completes or reopens work; else a neighbour.
+      const index = columns.findIndex((entry) => entry.id === column.id);
+      const sameStatus = columns.find((entry) => entry.id !== column.id && entry.status === column.status);
+      setTargetId((sameStatus ?? columns[index - 1] ?? columns[index + 1])?.id ?? '');
+    },
+    column,
+  );
 
   const options = [
     {

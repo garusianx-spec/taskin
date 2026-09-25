@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import type { AvatarTone, WorkspaceDraft } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
 import { monogram } from '@taskin/text';
 import { formatFileSize } from '@/lib/format';
 import { useNamespacedId } from '@/hooks/useId';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { useRovingFocus } from '@/hooks/useRovingFocus';
 import { Button, Input, Modal, Textarea } from '@/components/ui';
 import { CheckIcon, GridIcon, ImageIcon, TrashIcon } from '@/components/icons';
@@ -48,15 +49,14 @@ export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspac
     },
   });
 
-  useEffect(() => {
-    if (!open) return;
+  useResetOnOpen(open, () => {
     setName('');
     setDescription('');
     setTone('brand');
     setIconUrl(null);
     setIconError(undefined);
     setTouched(false);
-  }, [open]);
+  });
 
   const nameError = touched && !name.trim() ? 'نام فضای کاری الزامی است.' : undefined;
 

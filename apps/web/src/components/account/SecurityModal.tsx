@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { LoginSession, User } from '@taskin/contracts';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { cn } from '@/lib/cn';
 import { formatJalali, toPersianDigits } from '@taskin/jalali';
 import { Badge, Button, IconButton, Input, Modal, RelativeTime, SwitchField } from '@/components/ui';
@@ -88,15 +89,14 @@ export function SecurityModal({
   const [touched, setTouched] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
+  useResetOnOpen(open, () => {
     setCurrent('');
     setNext('');
     setConfirm('');
     setReveal(false);
     setTouched(false);
     setSaved(false);
-  }, [open]);
+  });
 
   const strength = measureStrength(next);
   const currentError = touched && !current ? 'رمز عبور فعلی را وارد کنید.' : undefined;

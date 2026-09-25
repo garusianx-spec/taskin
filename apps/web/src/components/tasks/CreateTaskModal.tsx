@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { BoardColumn, TaskDraft, TaskPriority } from '@taskin/contracts';
 import { TASK_PRIORITIES } from '@/data/reference';
 import { PROJECTS, USERS } from '@/data/workspace';
 import { formatFileSize } from '@/lib/format';
 import { formatJalali, toISODate } from '@taskin/jalali';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { taskDraft } from '@/store/drafts';
 import { columnForPlacement } from '@/store/selectors';
 import { Avatar, Badge, Button, Checkbox, IconButton, Input, Modal, Select, Textarea } from '@/components/ui';
@@ -42,11 +43,14 @@ export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: Cre
   const [touched, setTouched] = useState(false);
 
   // Re-seed whenever the modal opens so a sourced draft replaces the previous form.
-  useEffect(() => {
-    if (!open) return;
-    setForm(draft ? { ...draft, dueDate: draft.dueDate ?? today() } : taskDraft({ dueDate: today() }));
-    setTouched(false);
-  }, [open, draft]);
+  useResetOnOpen(
+    open,
+    () => {
+      setForm(draft ? { ...draft, dueDate: draft.dueDate ?? today() } : taskDraft({ dueDate: today() }));
+      setTouched(false);
+    },
+    draft,
+  );
 
   const fromMessage = form.sourceMessageId !== null;
   const fromNote = form.sourceNoteId !== null;

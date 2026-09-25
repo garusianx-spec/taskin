@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { PresenceState, ProfileSettings, User } from '@taskin/contracts';
 import { PRESENCE_OPTIONS, departmentName, roleLabel } from '@/data/reference';
 import { cn } from '@/lib/cn';
 import { toPersianDigits } from '@taskin/jalali';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { useRovingFocus } from '@/hooks/useRovingFocus';
 import { Avatar, Badge, Button, Input, Modal } from '@/components/ui';
 import { CloseIcon, InfoCircleIcon, ShieldIcon, UserIcon } from '@/components/icons';
@@ -37,11 +38,14 @@ export function ProfileModal({ open, user, profile, onClose, onSave, onOpenSecur
   const [presence, setPresence] = useState<PresenceState>(profile.presence);
   const [statusMessage, setStatusMessage] = useState(profile.statusMessage);
 
-  useEffect(() => {
-    if (!open) return;
-    setPresence(profile.presence);
-    setStatusMessage(profile.statusMessage);
-  }, [open, profile]);
+  useResetOnOpen(
+    open,
+    () => {
+      setPresence(profile.presence);
+      setStatusMessage(profile.statusMessage);
+    },
+    profile,
+  );
 
   const { registerItem, onKeyDown } = useRovingFocus(PRESENCE_OPTIONS.length, 'horizontal', {
     onActivate: (index) => {

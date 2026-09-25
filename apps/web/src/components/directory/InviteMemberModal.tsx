@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import type { DepartmentId, Invitation, InvitationChannel, InvitationRecipient, RoleId } from '@taskin/contracts';
 import type { InvitationDraft } from '@/store/workspace-reducer';
 import { USERS } from '@/data/workspace';
@@ -16,6 +16,7 @@ import {
   splitRecipients,
 } from '@taskin/text';
 import { useNamespacedId } from '@/hooks/useId';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { Badge, Button, IconButton, Modal, RelativeTime, Select, Textarea } from '@/components/ui';
 import { CloseIcon, MobileIcon, SendIcon, SmsIcon, TrashIcon, UserAddIcon } from '@/components/icons';
 
@@ -65,8 +66,7 @@ export function InviteMemberModal({ open, invitations, onClose, onSubmit, onRevo
   const inputRef = useRef<HTMLInputElement | null>(null);
   const id = useNamespacedId('invite-');
 
-  useEffect(() => {
-    if (!open) return;
+  useResetOnOpen(open, () => {
     setRecipients([]);
     setPendingText('');
     setProblems([]);
@@ -74,7 +74,7 @@ export function InviteMemberModal({ open, invitations, onClose, onSubmit, onRevo
     setDepartment('engineering');
     setMessage('');
     setTouched(false);
-  }, [open]);
+  });
 
   /** Validates raw tokens and adds the good ones. Returns the list as it will be after commit. */
   const commit = (raw: string): readonly InvitationRecipient[] => {

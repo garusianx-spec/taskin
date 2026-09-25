@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { AppNotification, NotificationEvent, NotificationFilterId } from '@taskin/contracts';
 import { NOTIFICATION_FILTERS, statusLabel, statusTone } from '@/data/reference';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { formatDateDivider, parseISODate, toISODate } from '@taskin/jalali';
@@ -67,9 +68,7 @@ export function NotificationCenter({
 }: NotificationCenterProps) {
   const [filter, setFilter] = useState<NotificationFilterId>('all');
 
-  useEffect(() => {
-    if (open) setFilter('all');
-  }, [open]);
+  useResetOnOpen(open, () => setFilter('all'));
 
   const counts = useMemo(
     () => ({

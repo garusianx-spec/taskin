@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { AvatarTone, Conversation, User } from '@taskin/contracts';
 import type { ConversationDraft } from '@/store/workspace-reducer';
 import { USERS } from '@/data/workspace';
 import { DEPARTMENTS } from '@/data/reference';
 import { cn } from '@/lib/cn';
 import { formatCount, seededUnit } from '@/lib/format';
+import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { useRovingFocus } from '@/hooks/useRovingFocus';
 import {
   Avatar,
@@ -54,8 +55,7 @@ export function NewConversationModal({
   const [topic, setTopic] = useState('');
   const [touched, setTouched] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
+  useResetOnOpen(open, () => {
     setMode('direct');
     setQuery('');
     setDirectId(null);
@@ -63,7 +63,7 @@ export function NewConversationModal({
     setGroupName('');
     setTopic('');
     setTouched(false);
-  }, [open]);
+  });
 
   const colleagues = useMemo(() => {
     const normalised = query.trim().toLowerCase();
