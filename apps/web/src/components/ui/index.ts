@@ -18,4 +18,5 @@ export { Select, type SelectOption, type SelectProps } from './Select';
 export { ProgressBar, type ProgressBarProps } from './Progress';
 export { Tooltip, type TooltipProps } from './Tooltip';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export { ClockTime, type ClockTimeProps } from './ClockTime';
 export { RelativeTime, type RelativeTimeProps } from './RelativeTime';

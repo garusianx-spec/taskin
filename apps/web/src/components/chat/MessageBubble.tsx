@@ -5,9 +5,8 @@ import type { Attachment, Message, User } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
 import { QUICK_REACTIONS } from '@/data/reference';
 import { downloadAttachment } from '@/lib/download';
-import { formatTime } from '@taskin/jalali';
 import { formatCount, formatFileSize } from '@/lib/format';
-import { Avatar, Badge, IconButton, Popover, Tooltip } from '@/components/ui';
+import { Avatar, Badge, ClockTime, IconButton, Popover, Tooltip } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
 import { VoicePlayer } from './VoicePlayer';
 import {
@@ -100,7 +99,7 @@ export function MessageBubble({
             <span className="text-caption font-semibold text-fg-primary">
               {outgoing ? 'شما' : author.fullName}
             </span>
-            <span className="numeric text-micro text-fg-quaternary">{formatTime(message.sentAt)}</span>
+            <ClockTime iso={message.sentAt} className="numeric text-micro text-fg-quaternary" />
           </div>
         )}
 
@@ -154,11 +153,10 @@ export function MessageBubble({
                   ویرایش‌شده
                 </span>
               )}
-              <span
+              <ClockTime
+                iso={message.sentAt}
                 className={cn('numeric text-micro', outgoing ? 'text-fg-on-brand/70' : 'text-fg-quaternary')}
-              >
-                {formatTime(message.sentAt)}
-              </span>
+              />
               {outgoing && (
                 <DoubleCheckIcon
                   size={14}
