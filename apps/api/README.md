@@ -3,7 +3,9 @@
 The Taskin backend: a NestJS 12 modular monolith (ESM, strict TypeScript) on PostgreSQL 18,
 Redis 7.4 and S3-compatible object storage. It implements RFC 0001
 ([docs/rfc/0001-backend-architecture.md](../../docs/rfc/0001-backend-architecture.md)); this
-package currently covers **milestone M1**: the platform, authentication, workspaces and RBAC.
+package currently covers **milestones M1 and M2**: the platform, authentication, workspaces and
+RBAC, then projects, the Kanban board, tasks, files, notes, the calendar, in-app notifications,
+the activity feed and Jalali reports.
 
 ## Running it
 
@@ -30,7 +32,7 @@ One image, chosen by `APP_ROLE` (RFC §1.3):
 | Role | Runs |
 | --- | --- |
 | `http` | The REST API: guards, validation, idempotency, rate limits |
-| `worker` | BullMQ consumers (SMS, email), maintenance schedules (audit partitions, workspace purge, cleanup) and the outbox relay |
+| `worker` | BullMQ consumers (SMS, email, notification and feed fan-out, file scans, calendar reminders), maintenance schedules (audit partitions, workspace purge, file garbage collection, cleanup) and the outbox relay |
 | `ws` | Health endpoints only for now; the Socket.IO gateway arrives with M3 |
 | `all` | Everything, for local development |
 
@@ -56,10 +58,13 @@ src/
 ├── modules/
 │   ├── auth/          OTP, sessions, EdDSA JWT, refresh rotation, CSRF, step-up, admin password
 │   ├── users/         /me
-│   ├── rbac/          CASL ability factory, membership cache, guards, role matrix
-│   └── workspaces/    workspaces, members, departments, invitations, icons
+│   ├── rbac/          CASL ability factory (with project scope), membership cache, guards, role matrix
+│   ├── workspaces/    workspaces, members, departments, invitations, icons
+│   ├── work/          projects, project access, the workflow and its columns, tasks, labels,
+│   │                  and the task read models (task-queries.ts)
+│   └── content/       files (uploads, sniffing, GC), notes, calendar, notifications and activity, reports
 ├── worker/            BullMQ processors
-└── cli/               migrate, schema snapshot, OpenAPI
+└── cli/               migrate, schema snapshot, OpenAPI, performance seed and measurement
 db/
 ├── migrations/        drizzle-kit output plus hand-written SQL (functions, RLS, triggers, audit partitions)
 └── schema.snapshot.txt   the migrated catalog, compared in CI
@@ -88,6 +93,24 @@ db/
   workspace's `rbac_version` (bumped in the same transaction as any role or membership change,
   so demotions bite on the next request) and builds a CASL ability from the matrix. Rank and
   no-escalation rules are enforced in the use cases; the owner row is also protected by a trigger.
+- **Project access** layers on the matrix: a project role (`lead`, `contributor`, `viewer`)
+  replaces the workspace role inside its project, private projects exist only for their members
+  (and the owner), and guests see only projects they belong to. The same rule exists twice, as
+  `projectActions` for loaded objects and as `projectVisibleSql` for list queries, and a
+  conformance test holds the two to each other for every role.
+- **Read models are single statements.** The board, lists, "my tasks", "due soon", search, a
+  task's detail and a calendar month are each one SQL statement (correlated aggregates over
+  indexed lookups), held to query budgets by the tests: a board is 3 statements including the
+  tenant setup, a task 2, a calendar month 2, "my tasks" 2.
+- **Board order** uses fractional-index keys (`COLLATE "C"`). A move locks the target column row
+  before reading its neighbours, so concurrent moves into one column serialise and never share a
+  key; stale versions get 412 with the current card, a deleted column 409 `COLUMN_GONE`.
+- **Files** go straight from the browser to object storage. Planning an upload reserves its bytes
+  against the plan's quota in one conditional statement; completion re-checks the size and sniffs
+  the bytes (a claim that disagrees with them is refused), and a worker scans the file before it
+  becomes downloadable. Downloads are 5-minute presigned links, always as attachments.
+- **Notifications and the feed** are written by the worker from outbox events, idempotently
+  (unique per event, collapsed per task while unread), for recipients who can still see the work.
 - **Correlation.** Every log line, audit row, outbox header and queue job carries the request id
   and W3C trace id.
 
@@ -96,14 +119,49 @@ db/
 | Command | What | Needs |
 | --- | --- | --- |
 | `npm test -w @taskin/api` | Unit tests: the full 5 × 5 × 5 permission matrix, crypto, redaction, error mapping, SMS failover | nothing |
-| `npm run test:int -w @taskin/api` | Integration suites: RLS isolation, auth, RBAC, idempotency, workspaces, invitations, audit coverage and correlation, query budgets | `npm run infra:up` |
+| `npm run test:int -w @taskin/api` | Integration suites: RLS isolation, auth, RBAC, idempotency, workspaces, invitations, projects and the CASL/SQL conformance check, board ordering and concurrency, tasks, uploads against S3, notes, calendar, notifications and feed, Jalali reports, audit coverage of every mutating route, query budgets | `npm run infra:up` |
 
 The integration run migrates a template database from zero once; every test file clones it
 (`CREATE DATABASE … TEMPLATE`) and uses its own Redis prefix, so files run in parallel. Override
 the services with `TEST_DATABASE_ADMIN_URL`, `TEST_REDIS_URL` and `TEST_S3_*`.
 
+Tests that depend on "today" pin the clock (`app.get(Clock).pin(date)`), so "due soon at 00:30 in
+Tehran" is a fixed instant rather than whenever the suite runs.
+
 `npm run db:snapshot -w @taskin/api` (with `DATABASE_MIGRATOR_URL`) rewrites
 `db/schema.snapshot.txt` after a schema change; review the diff with the migration.
+
+## Performance
+
+`npm run perf:seed -w @taskin/api` builds the `taskin_perf` database the M2 checklist asks for
+(50 workspaces, 1,000,000 tasks, 5,000,000 subtasks; about 15 minutes and a few gigabytes), and
+`npm run perf:measure -w @taskin/api` runs the API's own read-model queries against it as
+`taskin_app` with row-level security, 200 random member/project samples each. Times are client
+round trips, including transferring and parsing the rows. It fails on a sequential scan of a large table, an
+empty result, a p95 of 50 ms or more, or a search lookup that misses the trigram index.
+`PERF_DATABASE_URL` points it at a server (defaults to `infra:up`'s). Results of the M2 run
+(PostgreSQL 18 in Docker, warm cache):
+
+| Read model | p50 ms | p95 ms | max ms | Rows | Driving index |
+| --- | --- | --- | --- | --- | --- |
+| board, 1,000 cards | 31.2 | 44.3 | 50.5 | 1000 | `tasks_project_status_idx`; each child table once over the page's ids |
+| board columns | 1.7 | 2.5 | 4.6 | 1 | `workflows_default_uq` (four columns per workspace) |
+| my tasks | 15.8 | 23.6 | 31.8 | 51 | `task_assignees_user_idx` → `tasks_ws_id_uq` |
+| due soon | 8.9 | 14.0 | 24.1 | 51 | `tasks_due_idx` |
+| search, common word (~8% of tasks) | 24.0 | 34.7 | 45.2 | 51 | `tasks_search_idx` via `app.search_task_ids` → `tasks_ws_id_uq` |
+| search, task code | 6.5 | 10.9 | 21.3 | 1 | `tasks_search_idx` via `app.search_task_ids` → `tasks_ws_id_uq` |
+| task detail | 4.2 | 7.1 | 16.0 | 1 | `tasks_ws_id_uq`; children by `task_id` |
+
+On the board, 14 ms is the executor and 4 ms is planning. The rest of the round trip is
+transferring and parsing 1,000 rows. Two things keep the lists flat as data grows:
+
+- **Pages read their tasks first.** Each child table (assignees, labels, subtasks, comments,
+  files, stars) is then read once, with `= any(array(select id from t))`, instead of once per card.
+- **Search goes through `app.search_task_ids` / `app.search_note_ids`.** Under row-level security,
+  PostgreSQL keeps an operator that is not leakproof, such as `LIKE`, out of index conditions. As
+  `taskin_app`, the trigram index could therefore narrow only by workspace. These SECURITY DEFINER
+  lookups return ids from the caller's own workspace (and, for notes, the caller's own notes),
+  and the RLS suite asserts that.
 
 ## Configuration
 

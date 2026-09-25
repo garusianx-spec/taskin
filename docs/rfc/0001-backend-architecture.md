@@ -1106,3 +1106,62 @@ comments at the named places carry the detail.
   arrive with the gateway in M3.
 - Each integration test file runs against its own clone of the template database
   (`CREATE DATABASE … TEMPLATE`) and its own Redis key prefix, so the files run in parallel.
+
+## Addendum B. Implementation notes (M2)
+
+M2 follows this RFC except where noted below. As in Addendum A, each entry says what changed and why.
+
+**Schema**
+
+| RFC | Implemented | Why |
+| --- | --- | --- |
+| People referenced as `users(id)` (§7–8) | Assignees, reviewers, authors, attendees, note owners and project members reference `workspace_members (workspace_id, user_id)` | Work can only point at someone who belongs, or belonged, to the same workspace. Members are never deleted (they leave), so the references never dangle |
+| `RESTRICT` and `SET NULL` foreign keys (§7–8) | `NO ACTION` everywhere except cascades; column-list `SET NULL (department_id)` for `projects` and `SET NULL (source_note_id)` for `tasks`, declared in SQL | A workspace purge cascades through every table in one statement, which `NO ACTION` allows and `RESTRICT` may not. The column list keeps `workspace_id` when a department or note goes |
+| `tasks.source_message_id → messages` (§7) | The column exists; its foreign key arrives with the messages table in M3 | The table does not exist yet |
+| `notification_kind` and `activity_kind` with underscores (§6) | Hyphenated (`task-assigned`), as in the contracts | §6's own rule: enum literals equal the contract literals, so there is no mapping layer |
+| `notes.deleted_at` (§8) | Notes are deleted outright | The category foreign key then enforces "a notebook can only be deleted when empty"; a task made from a deleted note keeps its content and loses the link |
+| A `tasks.status` written by the service | Also enforced by the `tasks_sync_status` trigger | The column is the source of truth; nothing can store a status that disagrees with it |
+| "Every workflow keeps a live to-do and a live done column" | The API checks (409 `WORKFLOW_CATEGORY_REQUIRED`), and a deferred constraint trigger (SQLSTATE `TK002`) makes a violating commit impossible | Defence in depth, like the owner-row trigger |
+
+**Permissions**
+
+- A project role replaces the workspace role inside its project: `lead` holds every action, `contributor` view, create, edit and assign, `viewer` view only. Guests are capped at contributor and see only the projects they belong to. The owner sees every project, private ones included; admins see private projects only as members.
+- Project membership follows the no-escalation rule of §11: you can grant, change or remove a project role only if you hold every action it carries. Changing a project's visibility needs the `delete` action.
+- `POST /tasks` has no route-level matrix check, because a project role can widen the workspace role (a guest who contributes to a project may create tasks there). The use case checks the project.
+- The CASL factory takes an optional project scope. Without one it answers route-level questions from the matrix; with one, project subjects (`Project`, `Task`, `Subtask`, `TaskComment`, `CalendarEvent`) are allowed per project. The workflow's columns and the labels are workspace-wide. The conformance test compares both sides for all five roles.
+
+**API**
+
+- Additions: `GET /board?projectId=` (columns and every visible card in two queries), `GET /tasks/gantt`, `GET /reports/tasks-by-month`, `GET /me/notifications` and `POST /me/notifications/read`, and label endpoints.
+- Assignees and labels are set with `PATCH /tasks/:id`, not as separate sub-resources. Subtasks, comments, attachments and stars are sub-resources as in §12.
+- Stale `If-Match` or `expectedVersion`: 412 with an `ETag` header and the current representation in the problem body's `current` field. A missing `If-Match` is 428.
+- "Due soon" follows the web app: not done, and overdue or due within three days, computed in the workspace time zone within the same SQL statement.
+- Moves take the neighbours' ids (`afterId`, `beforeId`). A neighbour that moved away returns 409 `BOARD_CHANGED`, and the client reloads.
+- When a key passes 50 characters, the move rewrites the column's keys inside its own transaction (the column is already locked), instead of in a separate job. The `resync:required` event arrives with the gateway in M3.
+
+**Files**
+
+- A presigned POST accepts exactly the announced size and Content-Type (`content-length-range` with minimum = maximum). Above 16 MB the upload is multipart, with presigned 8 MiB parts.
+- On completion the API re-checks the stored size and sniffs the first bytes. Executables are refused whatever they claim, and so is a claim that disagrees with the bytes.
+- The scanning step is a stub that marks files ready; ClamAV plugs into `FilesService.scan`. An hourly job collects uploads never completed and files no task links to after 24 hours, releasing their bytes.
+- The S3 clients compute checksums only when an operation requires one. By default the SDK signs a CRC32 of an empty body into presigned part URLs, and every real part upload then fails.
+
+**Calendar, notifications and activity**
+
+- **Personal events** (no project) are visible to their author and attendees. Only the author, or the owner, can change them.
+- **Timed events** are stored as instants computed in the workspace time zone. The calendar shows the deadlines of open tasks only.
+- **Reminders:** meetings 15 minutes before the start, reminders on time, all-day entries at 09:00 workspace time, milestones never. Each reminder is a delayed job per event version, and a stale version does nothing when it fires.
+- **Not yet:** RSVP (`attendee_response`) and recurrence. The columns exist.
+- **Fan-out:** the worker writes notifications and activity rows from outbox events.
+  - Redelivery is harmless: activity rows are unique per event, and notifications are unique per dedupe key while unread.
+  - A card moved several times collapses into one unread status notification.
+- **Row-level security:** the inbox is readable by its recipient across workspaces. Fan-out writes happen in the event's workspace with no user set.
+
+**Performance**
+
+- `node dist/cli/perf.js --seed` and `--measure` generate the M2 dataset (50 workspaces, 1M tasks, 5M subtasks) and run the API's own query builders against it as `taskin_app`, with row-level security. The script reports p95 latency and the scans each plan uses. It fails on a sequential scan of a large table, an empty result, a p95 of 50 ms or more, or a search lookup that misses the trigram index.
+- It runs locally, not in CI: seeding takes about 15 minutes and several gigabytes. The numbers from the M2 run are in `apps/api/README.md`. The slowest read model is the 1,000-card board, at a p95 of 44 ms.
+- **List pages read their tasks first.** Each child table (assignees, labels, subtasks, comments, files, stars) is then read once, over the page's ids, and hash- or merge-joined back. Correlated sub-queries per card took the 1,000-card board over budget.
+- **Search runs through SECURITY DEFINER lookups** (`app.search_task_ids`, `app.search_note_ids`), which is a change from §6's plain `LIKE` under RLS.
+  - **Why:** under row-level security, PostgreSQL never uses an operator that is not leakproof (such as `LIKE`) as an index condition, so the trigram index could narrow a search only by workspace.
+  - **Scope:** the lookups return ids only, and only from the caller's workspace (and the caller's notes), as the transaction settings name them. The RLS suite asserts this.
