@@ -54,7 +54,14 @@ export type ApiErrorCode =
   | 'BOARD_CHANGED'
   | 'ASSIGNEE_NO_ACCESS'
   // Notes
-  | 'NOTE_CATEGORY_IN_USE';
+  | 'NOTE_CATEGORY_IN_USE'
+  // Chat and realtime
+  | 'CONVERSATION_ARCHIVED'
+  | 'POSTING_RESTRICTED'
+  | 'DIRECT_CONVERSATION'
+  | 'EDIT_WINDOW_CLOSED'
+  | 'MESSAGE_GONE'
+  | 'NOT_SUBSCRIBED';
 
 export interface FieldError {
   /** Dotted path of the offending field, e.g. `recipients.2.address`. */

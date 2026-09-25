@@ -123,6 +123,8 @@ export interface MemberView {
   readonly jobTitle: string;
   readonly status: MemberStatus;
   readonly presence: ManualPresence;
+  /** Connected on at least one device right now (from the realtime gateway). */
+  readonly online: boolean;
   readonly statusMessage: string;
   readonly joinedAt: string;
 }
