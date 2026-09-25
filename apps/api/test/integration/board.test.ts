@@ -122,7 +122,11 @@ describe('M2 checklist: board columns and moves', () => {
   it('refuses a stale version with 412 and the current card', async () => {
     const task = await createTask(t, owner, workspace.id, { projectId: project.id, title: 'نسخه' });
     const inProgress = (await getWorkflow(t, owner, workspace.id)).columns.find((column) => column.status === 'in-progress') as ColumnView;
-    expectStatus(await move(task, inProgress.id), 200);
+    const moved = await move(task, inProgress.id);
+    expectStatus(moved, 200);
+    expect((await outboxEvents(t, 'task.moved', task.id)).map((event) => event.payload)).toEqual([
+      { taskId: task.id, projectId: project.id, fromColumnId: task.columnId, toColumnId: inProgress.id, position: moved.body.position, version: task.version + 1 },
+    ]);
     const stale = await move(task, inProgress.id);
     expectStatus(stale, 412);
     expect(stale.body.current).toMatchObject({ id: task.id, version: task.version + 1, columnId: inProgress.id });
