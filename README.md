@@ -4,7 +4,9 @@
 
 An RTL-first, Persian enterprise communication and task-management platform built on
 Next.js (App Router), React and TypeScript in strict mode, styled with Tailwind CSS against
-a fully tokenised Untitled UI design system.
+a fully tokenised Untitled UI design system. The backend (`apps/api`) is a NestJS modular
+monolith on PostgreSQL, Redis and S3-compatible storage, designed in
+[RFC 0001](docs/rfc/0001-backend-architecture.md) and built milestone by milestone.
 
 ---
 
@@ -15,22 +17,33 @@ Node.js 22.12 or newer. Every command runs from the repository root:
 ```bash
 npm install
 npm run dev             # builds the shared packages, then http://localhost:3000
-npm run build           # packages + production build of apps/web
+npm run build           # packages, apps/api and the production build of apps/web
 npm run typecheck       # every workspace (strict, noUncheckedIndexedAccess)
-npm run lint            # Next rules for apps/web, typescript-eslint for packages
-npm test                # unit tests for packages/jalali and packages/text
+npm run lint            # Next rules for apps/web, typescript-eslint for packages and apps/api
+npm test                # unit tests: packages/jalali, packages/text, apps/api (no services needed)
 npm run check:contrast  # WCAG AA audit of every palette × mode (see Theme engine)
 npm run build && npm run test:e2e   # Playwright suites against the production build
+
+# Backend (Docker for the backing services)
+npm run infra:up        # PostgreSQL 18, PgBouncer, Redis ×2, S3 (SeaweedFS), Mailpit
+npm run test:int        # API integration suites against a database migrated from zero
+npm run infra:app       # also builds and runs the API image (migrations first) on :4000
+npm run infra:down
 ```
+
+See [apps/api/README.md](apps/api/README.md) for running the API outside Docker, its
+configuration and its test layout.
 
 The repository is an npm-workspaces monorepo:
 
 | Path | Contents |
 | --- | --- |
 | `apps/web` | The Next.js app |
-| `packages/contracts` | Domain types, shared with the upcoming API |
+| `apps/api` | The NestJS API: auth, workspaces, RBAC, outbox and queues (M1 of RFC 0001) |
+| `packages/contracts` | Domain types, API contracts and the permission vocabulary, shared by web and API |
 | `packages/jalali` | Jalali calendar engine and Persian date formatting |
 | `packages/text` | Persian text helpers: digits, Iranian mobile numbers, monograms, note Markdown and checklists |
+| `infra` | Docker Compose stack for local development, database roles, S3 configuration |
 | `docs/rfc` | Architecture decisions; the backend design is [RFC 0001](docs/rfc/0001-backend-architecture.md) |
 
 Packages compile to `dist/`. While `npm run dev` is running, run `npm run build:packages -- --watch`
@@ -384,8 +397,10 @@ the message text and any attachment. Verified: zero horizontal overflow on every
 
 ## What is mocked
 
-This is a complete front end against an in-memory fixture (`apps/web/src/data/workspace.ts`); there is
-no backend. Two consequences worth stating plainly:
+The web app is a complete front end against an in-memory fixture
+(`apps/web/src/data/workspace.ts`). The API it will talk to exists (`apps/api`, milestone M1:
+sign-in, workspaces, members, invitations, roles), but wiring the two together is milestone M4,
+so for now the front end does not call it. Consequences worth stating plainly:
 
 - **Voice messages have no audio files.** `VoicePlayer` implements both transports: when a
   message carries a `src` it drives a real `HTMLAudioElement` (seeking, `timeupdate`,

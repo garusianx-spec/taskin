@@ -1061,3 +1061,48 @@ Next steps once this RFC is approved:
 
 1. Commit it as `docs/rfc/0001-backend-architecture.md` in the `taskin` repository.
 2. Start M0, then M1. Each milestone writes its checklist tests first, implements, passes typecheck, lint and its checklist, is committed and pushed, and pauses for review.
+
+## Addendum A. Implementation notes (M1)
+
+M1 follows this RFC except where noted below. Each entry says what changed and why; the code
+comments at the named places carry the detail.
+
+**Infrastructure**
+
+| RFC | Implemented | Why |
+| --- | --- | --- |
+| MinIO + `minio-init` in Compose (§13) | SeaweedFS 4.47 (`chrislusf/seaweedfs`) with an `s3-init` job creating `taskin-files` | MinIO no longer publishes community images or binaries. The API talks to the S3 port only (`forcePathStyle`, presigned POST), so production can still run MinIO, Arvan or Ceph. Versioning and lifecycle rules move to the production bucket runbook |
+| Migrations tested with Testcontainers; `pg_dump --schema-only` diffed against a snapshot (§1) | A template database migrated from zero once per test run; `db/schema.snapshot.txt` rendered from the catalog (columns, constraints, indexes, RLS, policies, triggers, function signatures, grants) and compared in `schema.test.ts`. CI also runs `drizzle-kit check` and fails on ungenerated schema changes | No Docker-in-Docker in CI or the dev container, and a catalog query is stable across `pg_dump` versions |
+| "Traceable end to end in Loki" (§15, M1 checklist) | `observability.test.ts` captures the process's JSON logs and asserts one request id and trace id across the request logs, the audit row, the outbox headers and the worker job's logs | Loki arrives with the observability profile; the assertion is the same, without a Loki container in CI |
+| NestJS "latest stable" | NestJS 12, ESM (`"type": "module"`, NodeNext) | Current major; decorators and `emitDecoratorMetadata` work under `tsc` and, in tests, SWC |
+
+**Schema**
+
+| RFC | Implemented | Why |
+| --- | --- | --- |
+| `users.phone_e164` (§6) | `users.phone` with `CHECK (phone ~ '^\+[1-9][0-9]{7,14}$')` | The snake_case mapping turns `phoneE164` into `phone_e_164`; `phone` reads better and the CHECK enforces the E.164 form |
+| `plans.limits` keys in snake_case (§6) | camelCase (`maxMembers`, `storageBytes`, …), matching `PlanLimits` in contracts | JSON goes straight to the client without a mapping layer. The seeded values (free 10 seats, team 100, enterprise 1000) are placeholders until business sets them (§16) |
+| `workspace_members.department_id … ON DELETE SET NULL` (§6) | `ON DELETE RESTRICT`; deleting a department in use returns 409 `DEPARTMENT_IN_USE` | A plain `SET NULL` on the composite FK would also null `workspace_id`, and Drizzle cannot declare PostgreSQL's column-list form `SET NULL (department_id)`. Reassigning members first is also what the UI expects |
+| `roles.name` (§6) | No `name` column; `roles.version` added | Built-in role names are localised on the client from `key`. `version` is the `ETag` for `PUT /roles/:id/permissions` with `If-Match` |
+| `auth_sessions` (§6) | Adds `stepped_up_at` | A refreshed access token keeps the session's step-up time instead of losing it |
+| The owner role's grants | The owner role has no `role_permissions` rows; the ability factory grants `manage all` | A locked role with implicit grants cannot drift. The trigger still rejects writes to it (SQLSTATE `TK001`) |
+| `project_members` in §6 | Created in M2 with `projects` | Its composite FK needs `projects` |
+| `audit_logs.id` as primary key | `PRIMARY KEY (id, created_at)`; monthly partitions created ahead by the maintenance queue, plus a default partition | A partitioned table's primary key must include the partition key |
+
+**Authentication and authorisation**
+
+| RFC | Implemented | Why |
+| --- | --- | --- |
+| Refresh cookie `__Host-taskin_rt; Path=/api/v1/auth` (§11) | `__Secure-taskin_rt` with the same path; the CSRF cookie is `__Host-taskin_csrf; Path=/` | Browsers reject a `__Host-` cookie whose path is not `/`. Plain-http development (`COOKIE_SECURE=false`) drops both prefixes |
+| Admin password required on first elevation (§11) | Also required to create a workspace: `POST /workspaces` returns 403 `PASSWORD_REQUIRED` until one is set | The creator becomes an owner, so they need a step-up factor from the start |
+| TOTP and phone change (§11) | Deferred | Not in the M1 scope. The `otp_purpose` enum already has `step_up` and `phone_change`; `users.totp_secret_enc` is added with TOTP |
+
+**Code structure**
+
+- Workspace, member, department, invitation and RBAC services share one `DomainModule` because
+  their guards and use cases reference each other. The facade boundaries of §2 and the lint rule
+  that enforces them arrive in M2, when `projects` and `tasks` add the first independent modules.
+- The outbox relay publishes BullMQ jobs only. The realtime emit and the `rt:events` streams
+  arrive with the gateway in M3.
+- Each integration test file runs against its own clone of the template database
+  (`CREATE DATABASE … TEMPLATE`) and its own Redis key prefix, so the files run in parallel.
