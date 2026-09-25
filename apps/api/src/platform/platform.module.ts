@@ -9,6 +9,9 @@ import { UnitOfWork } from './db/unit-of-work.js';
 import { MailService } from './mail/mail.js';
 import { OutboxWriter } from './outbox/outbox-writer.js';
 import { Queues } from './queue/queues.js';
+import { EventStream } from './realtime/event-stream.js';
+import { PresenceDirectory } from './realtime/presence-directory.js';
+import { RealtimePublisher } from './realtime/realtime-publisher.js';
 import { RedisClients } from './redis/redis.js';
 import { SmsService } from './sms/sms.js';
 import { StorageService } from './storage/storage.js';
@@ -25,10 +28,13 @@ const providers = [
   SmsService,
   MailService,
   StorageService,
+  EventStream,
+  RealtimePublisher,
+  PresenceDirectory,
   { provide: SecretBox, inject: [AppConfig], useFactory: (config: AppConfig) => new SecretBox(config.env.APP_ENCRYPTION_KEY) },
 ];
 
-/** Infrastructure every role needs: database, Redis, queues, storage, SMS, mail, audit, outbox. */
+/** Infrastructure every role needs: database, Redis, queues, storage, SMS, mail, audit, outbox, realtime publishing. */
 @Global()
 @Module({ providers, exports: providers })
 export class PlatformModule {}

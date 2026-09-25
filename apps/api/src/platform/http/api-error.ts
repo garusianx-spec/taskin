@@ -48,6 +48,12 @@ export const ERROR_CATALOGUE: Readonly<Record<ApiErrorCode, { readonly status: n
   BOARD_CHANGED: { status: 409, title: 'The board changed; reload it' },
   ASSIGNEE_NO_ACCESS: { status: 422, title: 'An assignee cannot see this project' },
   NOTE_CATEGORY_IN_USE: { status: 409, title: 'The category still has notes' },
+  CONVERSATION_ARCHIVED: { status: 409, title: 'The conversation is archived' },
+  POSTING_RESTRICTED: { status: 403, title: 'Only the channel admins can post here' },
+  DIRECT_CONVERSATION: { status: 409, title: 'A direct chat always has exactly its two people' },
+  EDIT_WINDOW_CLOSED: { status: 409, title: 'The message can no longer be edited' },
+  MESSAGE_GONE: { status: 410, title: 'The message was deleted' },
+  NOT_SUBSCRIBED: { status: 409, title: 'Subscribe to the workspace first' },
 };
 
 /**

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { AppConfig } from '../../config/app-config.js';
 import { Database } from '../../platform/db/database.js';
 import { authSessions, users } from '../../platform/db/schema/all.js';
@@ -11,6 +11,8 @@ export interface UserStanding {
 }
 
 const STANDING_TTL_SECONDS = 300;
+/** The most users one shared lookup asks about. */
+const STANDING_BATCH = 500;
 
 /**
  * The per-request checks behind every access token: is its session revoked, and does its
@@ -21,6 +23,8 @@ const STANDING_TTL_SECONDS = 300;
 @Injectable()
 export class RevocationService {
   private readonly logger = new Logger('RevocationService');
+  private standingQueue = new Map<string, { resolve: (standing: UserStanding) => void; reject: (error: unknown) => void }[]>();
+  private standingInFlight = false;
 
   constructor(
     private readonly config: AppConfig,
@@ -59,16 +63,46 @@ export class RevocationService {
     } catch {
       // Fall through to the database.
     }
-    const [row] = await this.database.db
-      .select({ securityVersion: users.securityVersion, status: users.status, deletedAt: users.deletedAt })
-      .from(users)
-      .where(eq(users.id, userId));
-    const standing: UserStanding = {
-      securityVersion: row?.securityVersion ?? -1,
-      active: row?.status === 'active' && row.deletedAt === null,
-    };
-    await this.redis.core.set(key, JSON.stringify(standing), 'EX', STANDING_TTL_SECONDS).catch(() => undefined);
-    return standing;
+    return new Promise<UserStanding>((resolve, reject) => {
+      const waiting = this.standingQueue.get(userId);
+      if (waiting) waiting.push({ resolve, reject });
+      else this.standingQueue.set(userId, [{ resolve, reject }]);
+      if (!this.standingInFlight) void this.lookUpStanding();
+    });
+  }
+
+  /**
+   * Cache misses share queries: one is in flight at a time, and every miss that arrives
+   * meanwhile goes into the next. Idle, a miss is one query as before; in a reconnect storm (a
+   * WebSocket node's sockets all arriving at another at once) a few queries answer thousands.
+   */
+  private async lookUpStanding(): Promise<void> {
+    this.standingInFlight = true;
+    try {
+      while (this.standingQueue.size > 0) {
+        const batch = new Map([...this.standingQueue].slice(0, STANDING_BATCH));
+        for (const userId of batch.keys()) this.standingQueue.delete(userId);
+        try {
+          const rows = await this.database.db
+            .select({ id: users.id, securityVersion: users.securityVersion, status: users.status, deletedAt: users.deletedAt })
+            .from(users)
+            .where(sql`${users.id} = any(${sql.param([...batch.keys()])}::uuid[])`);
+          const found = new Map(rows.map((row) => [row.id, row]));
+          const pipeline = this.redis.core.pipeline();
+          for (const [userId, waiters] of batch) {
+            const row = found.get(userId);
+            const standing: UserStanding = { securityVersion: row?.securityVersion ?? -1, active: row?.status === 'active' && row.deletedAt === null };
+            pipeline.set(this.redis.key('user', 'standing', userId), JSON.stringify(standing), 'EX', STANDING_TTL_SECONDS);
+            for (const waiter of waiters) waiter.resolve(standing);
+          }
+          await pipeline.exec().catch(() => undefined);
+        } catch (error) {
+          for (const waiters of batch.values()) for (const waiter of waiters) waiter.reject(error);
+        }
+      }
+    } finally {
+      this.standingInFlight = false;
+    }
   }
 
   /** Call after committing a change to a user's security version or status. */

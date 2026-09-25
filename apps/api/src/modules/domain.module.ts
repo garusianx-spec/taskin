@@ -16,6 +16,8 @@ import { IconsService } from './workspaces/icons.service.js';
 import { InvitationsService } from './workspaces/invitations.service.js';
 import { MembersService } from './workspaces/members.service.js';
 import { WorkspacesService } from './workspaces/workspaces.service.js';
+import { ConversationsService } from './chat/conversations.service.js';
+import { MessagesService } from './chat/messages.service.js';
 import { CalendarService } from './content/calendar.service.js';
 import { FeedService } from './content/feed.service.js';
 import { FilesService } from './content/files.service.js';
@@ -64,11 +66,14 @@ const services = [
   FeedService,
   CalendarService,
   ReportsService,
+  // chat
+  ConversationsService,
+  MessagesService,
 ];
 
 /**
- * The bounded contexts' services (auth, users, rbac, workspaces, work, content). No controllers: the HTTP API
- * and the worker each import this and add their own entry points, so a worker can never expose
+ * The bounded contexts' services (auth, users, rbac, workspaces, work, content, chat). No controllers:
+ * the HTTP API, the WebSocket gateway and the worker each import this and add their own entry points, so a worker can never expose
  * a route without the HTTP guards in front of it.
  */
 @Module({ providers: services, exports: services })

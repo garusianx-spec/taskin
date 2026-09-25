@@ -9,7 +9,9 @@ import { AppConfig, ConfigModule } from './config/app-config.js';
 import type { Env } from './config/env.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import { JwtAuthGuard } from './modules/auth/guards.js';
+import { ChatController } from './modules/chat/chat.controller.js';
 import { DomainModule } from './modules/domain.module.js';
+import { RealtimeModule } from './modules/realtime/realtime.module.js';
 import { MeController } from './modules/users/me.controller.js';
 import { ContentController, InboxController } from './modules/content/content.controller.js';
 import { WorkController } from './modules/work/work.controller.js';
@@ -50,16 +52,16 @@ class HttpApiModule {
       imports: [
         DomainModule,
         ThrottlerModule.forRootAsync({
-          inject: [RedisClients],
-          useFactory: (redis: RedisClients) => ({
+          inject: [RedisClients, AppConfig],
+          useFactory: (redis: RedisClients, config: AppConfig) => ({
             storage: new RedisThrottlerStorage(redis),
             throttlers: [
-              // RFC §2.8: 300/min per IP for everyone, 600/min per signed-in user.
-              { name: 'ip', ttl: 60_000, limit: 300 },
+              // RFC §2.8: 300/min per IP for everyone, 600/min per signed-in user (the defaults).
+              { name: 'ip', ttl: 60_000, limit: config.env.THROTTLE_IP_PER_MINUTE },
               {
                 name: 'user',
                 ttl: 60_000,
-                limit: 600,
+                limit: config.env.THROTTLE_USER_PER_MINUTE,
                 getTracker: (request: Record<string, unknown>) => `user:${(request as AuthenticatedRequest).auth?.userId ?? 'anonymous'}`,
                 skipIf: (context) => !context.switchToHttp().getRequest<AuthenticatedRequest>().auth,
               },
@@ -67,7 +69,7 @@ class HttpApiModule {
           }),
         }),
       ],
-      controllers: [AuthController, MeController, InboxController, WorkspaceEntryController, WorkspaceController, WorkController, ContentController],
+      controllers: [AuthController, MeController, InboxController, WorkspaceEntryController, WorkspaceController, WorkController, ContentController, ChatController],
       providers: pipeline,
     };
   }
@@ -84,12 +86,13 @@ class WorkerModule {}
 @Module({})
 export class AppModule {
   /**
-   * One image, several roles (RFC §1.3): `http` serves the REST API, `worker` runs queues and the
-   * outbox relay, `ws` will host the Socket.IO gateway (M3), `all` runs everything for local work.
-   * Every role answers /health/live and /health/ready.
+   * One image, several roles (RFC §1.3): `http` serves the REST API, `ws` the Socket.IO gateway,
+   * `worker` runs queues and the outbox relay, `all` runs everything for local work. Every role
+   * answers /health/live and /health/ready.
    */
   static forRole(env: Env, options: AppModuleOptions = {}): DynamicModule {
     const http = env.APP_ROLE === 'http' || env.APP_ROLE === 'all';
+    const ws = env.APP_ROLE === 'ws' || env.APP_ROLE === 'all';
     const worker = env.APP_ROLE === 'worker' || env.APP_ROLE === 'all';
     return {
       module: AppModule,
@@ -104,6 +107,7 @@ export class AppModule {
         PlatformModule,
         TerminusModule,
         ...(http ? [HttpApiModule.register()] : []),
+        ...(ws ? [RealtimeModule] : []),
         ...(worker ? [WorkerModule] : []),
       ],
       controllers: [HealthController],

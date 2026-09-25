@@ -15,10 +15,12 @@ import { AuditWriter } from '../../platform/audit/audit-writer.js';
 import type { Tx } from '../../platform/db/database.js';
 import { iso, num } from '../../platform/db/rows.js';
 import { projects, users } from '../../platform/db/schema/all.js';
-import { UnitOfWork } from '../../platform/db/unit-of-work.js';
+import { type Unit, UnitOfWork } from '../../platform/db/unit-of-work.js';
 import type { AuthPrincipal, MembershipContext } from '../../platform/http/request.js';
 import type { OutboxEventMap } from '../../platform/outbox/outbox-writer.js';
 import type { FeedFanoutJob } from '../../platform/queue/queues.js';
+import { RealtimePublisher } from '../../platform/realtime/realtime-publisher.js';
+import { rooms } from '../../platform/realtime/rooms.js';
 import { AccessService, projectVisibleSql } from '../work/access.js';
 import { decodeCursor, encodeCursor } from '../work/task-queries.js';
 
@@ -60,19 +62,21 @@ export class FeedService {
     private readonly uow: UnitOfWork,
     private readonly audit: AuditWriter,
     private readonly access: AccessService,
+    private readonly publisher: RealtimePublisher,
   ) {}
 
   /* ================================================================== fan-out (worker) */
 
   async fanout(job: FeedFanoutJob): Promise<void> {
-    await this.uow.run({ workspaceId: job.workspaceId, userId: null }, async ({ tx }) => {
+    await this.uow.run({ workspaceId: job.workspaceId, userId: null }, async (unit) => {
+      const { tx } = unit;
       const actor = job.actorId;
       switch (job.type) {
         case 'task.assigned': {
           const payload = job.payload as unknown as OutboxEventMap['task.assigned'];
           const recipients = await this.viewers(tx, job.workspaceId, payload.projectId, payload.assigneeIds, actor);
           await this.notify(
-            tx,
+            unit,
             recipients.map((recipientId) => ({
               ...this.taskTarget(job, payload),
               recipientId,
@@ -88,7 +92,7 @@ export class FeedService {
           const payload = job.payload as unknown as OutboxEventMap['task.status_changed'];
           const recipients = await this.viewers(tx, job.workspaceId, payload.projectId, payload.watcherIds, actor);
           await this.notify(
-            tx,
+            unit,
             recipients.map((recipientId) => ({
               ...this.taskTarget(job, payload),
               recipientId,
@@ -107,7 +111,7 @@ export class FeedService {
           const replyTo = payload.replyToAuthorId && payload.replyToAuthorId !== actor ? payload.replyToAuthorId : null;
           const recipients = await this.viewers(tx, job.workspaceId, payload.projectId, [...payload.watcherIds, ...(replyTo ? [replyTo] : [])], actor);
           await this.notify(
-            tx,
+            unit,
             recipients.map((recipientId) => ({
               ...this.taskTarget(job, payload),
               recipientId,
@@ -140,14 +144,47 @@ export class FeedService {
           });
           return;
         }
+        case 'message.posted': {
+          const payload = job.payload as unknown as OutboxEventMap['message.posted'];
+          const candidates = [...new Set([...payload.mentionIds, ...(payload.replyToAuthorId ? [payload.replyToAuthorId] : [])])].filter((id) => id !== actor);
+          if (candidates.length === 0) return;
+          // Still in the conversation, and not silenced ("nothing"); a muted chat still reports mentions.
+          const result = await tx.execute<{ user_id: string; title: string | null; kind: string }>(sql`
+            select cm.user_id, c.title, c.kind
+            from conversation_members cm
+            join conversations c on c.workspace_id = cm.workspace_id and c.id = cm.conversation_id
+            where cm.workspace_id = ${job.workspaceId} and cm.conversation_id = ${payload.conversationId} and cm.left_at is null
+              and cm.notification_level <> 'none' and cm.user_id = any(${sql.param(candidates)}::uuid[])`);
+          const mentioned = new Set(payload.mentionIds);
+          await this.notify(
+            unit,
+            result.rows.map((row) => ({
+              workspaceId: job.workspaceId,
+              recipientId: row.user_id,
+              actorId: actor,
+              kind: mentioned.has(row.user_id) ? ('mention' as const) : ('reply' as const),
+              subject: row.title ?? '',
+              targetType: 'message' as const,
+              targetId: payload.messageId,
+              payload: { conversationId: payload.conversationId, conversationKind: row.kind, seq: payload.seq, excerpt: payload.excerpt },
+              dedupeKey: `evt:${job.eventId}`,
+            })),
+          );
+          return;
+        }
         default:
           return;
       }
     });
   }
 
-  /** Inserts notifications idempotently (the worker, and calendar reminders). */
-  async notify(tx: Tx, rows: readonly NotificationInsert[]): Promise<void> {
+  /**
+   * Inserts notifications idempotently (the worker, and calendar reminders). After the unit
+   * commits, each new (or collapsed) notification is pushed to its recipient's sockets.
+   */
+  async notify(unit: Unit, rows: readonly NotificationInsert[]): Promise<void> {
+    const { tx } = unit;
+    const created: { recipientId: string; view: NotificationView }[] = [];
     for (const collapse of [false, true]) {
       const batch = rows.filter((row) => Boolean(row.collapse) === collapse);
       if (batch.length === 0) continue;
@@ -159,7 +196,7 @@ export class FeedService {
         ),
         sql`, `,
       );
-      await tx.execute(sql`
+      const inserted = await tx.execute<Record<string, unknown>>(sql`
         insert into notifications (workspace_id, recipient_id, actor_id, kind, payload, subject, target_type, target_id, dedupe_key)
         values ${values}
         on conflict (recipient_id, dedupe_key) where dedupe_key is not null and read_at is null
@@ -167,8 +204,25 @@ export class FeedService {
           collapse
             ? sql`do update set payload = excluded.payload, actor_id = excluded.actor_id, subject = excluded.subject, created_at = now()`
             : sql`do nothing`
-        }`);
+        }
+        returning id, workspace_id, recipient_id, kind, actor_id, subject, payload, target_type, target_id, read_at, created_at`);
+      for (const row of inserted.rows) created.push({ recipientId: String(row.recipient_id), view: notificationView(row) });
     }
+    if (created.length > 0) unit.afterCommit(() => this.announce(created));
+  }
+
+  /** `notification:new` to the recipient's sockets (in every workspace: the inbox is per user). */
+  private announce(created: readonly { recipientId: string; view: NotificationView }[]): Promise<void> {
+    return this.publisher.emit(
+      ...created.map(({ recipientId, view }) => ({
+        type: 'notification:new' as const,
+        workspaceId: view.workspaceId,
+        rooms: [rooms.user(recipientId)],
+        actorId: view.actorId,
+        data: view,
+        durable: true,
+      })),
+    );
   }
 
   /* ================================================================== inbox (per user, across workspaces) */

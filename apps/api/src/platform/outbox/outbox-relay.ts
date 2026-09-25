@@ -6,6 +6,8 @@ import { AppConfig } from '../../config/app-config.js';
 import { Database } from '../db/database.js';
 import { outboxEvents } from '../db/schema/all.js';
 import { type JobHeaders, type NotificationJobs, Queues, type WorkJobs } from '../queue/queues.js';
+import { realtimeFor } from '../realtime/outbox-realtime.js';
+import { RealtimePublisher } from '../realtime/realtime-publisher.js';
 import type { OutboxEventMap, OutboxEventType } from './outbox-writer.js';
 
 type OutboxRow = typeof outboxEvents.$inferSelect;
@@ -22,7 +24,14 @@ type Publication =
     };
 
 /** The events whose side effects land in inboxes and the activity feed. */
-const FEED_EVENTS: ReadonlySet<OutboxEventType> = new Set(['task.assigned', 'task.status_changed', 'task.commented', 'task.file_attached', 'member.joined']);
+const FEED_EVENTS: ReadonlySet<OutboxEventType> = new Set([
+  'task.assigned',
+  'task.status_changed',
+  'task.commented',
+  'task.file_attached',
+  'member.joined',
+  'message.posted',
+]);
 
 /** What each event turns into. Events without work (yet) are simply marked published. */
 export function publicationsFor(row: OutboxRow, now: number): readonly Publication[] {
@@ -59,7 +68,7 @@ export function publicationsFor(row: OutboxRow, now: number): readonly Publicati
         },
       ];
     }
-    // Realtime fan-out for the rest arrives with the Socket.IO gateway (M3).
+    // Everything else is realtime only (see realtimeFor), or nothing yet.
     default:
       return [];
   }
@@ -70,7 +79,8 @@ const POLL_MS = 2_000;
 const CAMPAIGN_RETRY_MS = 5_000;
 
 /**
- * Publishes committed outbox rows, oldest first, exactly one relay at a time. Leadership is a
+ * Publishes committed outbox rows, oldest first, exactly one relay at a time: side-effect jobs to
+ * BullMQ, then realtime events and room operations to the WebSocket nodes. Leadership is a
  * session advisory lock on a direct connection (not through PgBouncer, which cannot hold session
  * state), which also carries LISTEN for instant wake-ups; a slow poll covers a missed notify.
  *
@@ -91,6 +101,7 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly config: AppConfig,
     private readonly database: Database,
     private readonly queues: Queues,
+    private readonly realtime: RealtimePublisher,
   ) {}
 
   get isLeader(): boolean {
@@ -139,6 +150,8 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
     const work = publications.filter((entry) => entry.publication.queue === 'work').map(job);
     if (notifications.length > 0) await this.queues.notifications.addBulk(notifications as Parameters<Queues['notifications']['addBulk']>[0]);
     if (work.length > 0) await this.queues.work.addBulk(work as Parameters<Queues['work']['addBulk']>[0]);
+    // Realtime last and best effort: clients recover a lost event by replay or refetch.
+    await this.realtime.publish(rows.flatMap((row) => realtimeFor(row)));
 
     await this.database.db
       .update(outboxEvents)

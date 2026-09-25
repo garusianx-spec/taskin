@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CalendarService } from '../../src/modules/content/calendar.service.js';
 import { bearer, createTestApp, idempotencyKey, invite, ownerWithWorkspace, type Session, type TestApp } from './harness.js';
+import { createConversation, sendRest } from './chat-helpers.js';
 import { createProject, createTask, expectStatus, wsPath } from './work-helpers.js';
 
 /** Platform tables that carry a workspace id but are read across tenants by design. */
@@ -32,6 +33,10 @@ async function populate(t: TestApp, owner: Session, workspaceId: string): Promis
   const event = await t.http().post(`${base}/calendar/events`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ kind: 'meeting', title: 'جلسه', date: '2030-01-01', startTime: '09:00', attendeeIds: [owner.userId] });
   expectStatus(event, 201);
   expectStatus(await t.http().post(`${base}/notes`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ title: 'یادداشت' }), 201);
+  // Chat: a conversation, a message mentioning its author, and a reaction.
+  const group = await createConversation(t, owner, workspaceId, { kind: 'group', title: 'گفتگو', memberIds: [] });
+  const sent = await sendRest(t, owner, workspaceId, group.id, { text: `<@${owner.userId}> سلام` });
+  expectStatus(await t.http().put(`${base}/conversations/${group.id}/messages/${sent.id}/reactions/${encodeURIComponent('👍')}`).set(bearer(owner)), 200);
   // Activity (file-shared) and a notification (the reminder) come from the worker.
   await t.flushNotifications();
   await t.app.get(CalendarService).remind(workspaceId, event.body.id, event.body.version);
@@ -101,6 +106,7 @@ describe('M1 checklist: row-level security isolates tenants', () => {
     expect(tenantTables).toEqual(
       expect.arrayContaining(['projects', 'tasks', 'board_columns', 'attachments', 'notes', 'calendar_events', 'notifications', 'activity_events']),
     );
+    expect(tenantTables).toEqual(expect.arrayContaining(['conversations', 'conversation_members', 'messages', 'message_reactions', 'message_mentions']));
   });
 
   it('shows workspace A none of workspace B’s rows, in any tenant table', async () => {

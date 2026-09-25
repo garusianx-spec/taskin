@@ -11,6 +11,7 @@ import type { Env } from './config/env.js';
 import type { RequestContextStore } from './platform/context/request-context.js';
 import { ensureLogContext, type RequestWithLogContext } from './platform/logging/logging.js';
 import { AppModule, type AppModuleOptions } from './app.module.js';
+import { RedisIoAdapter } from './modules/realtime/redis-io.adapter.js';
 
 /**
  * Builds the Nest application for `env.APP_ROLE` without listening, so tests and the CLI share
@@ -68,6 +69,8 @@ export async function createApp(env: Env, options: AppModuleOptions = {}): Promi
     ],
   });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+  // The Socket.IO gateway shares the HTTP server, on the `/rt` path (ws and all roles).
+  if (env.APP_ROLE === 'ws' || env.APP_ROLE === 'all') app.useWebSocketAdapter(new RedisIoAdapter(app));
   app.enableShutdownHooks();
   return app;
 }

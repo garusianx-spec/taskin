@@ -4231,6 +4231,860 @@
           "content"
         ]
       }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations": {
+      "get": {
+        "operationId": "Chat_list",
+        "parameters": [
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "mine",
+              "type": "string",
+              "enum": [
+                "mine",
+                "public"
+              ]
+            }
+          },
+          {
+            "name": "includeHidden",
+            "required": false,
+            "in": "query",
+            "description": "Include hidden direct chats",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationViewDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The sidebar (scope=mine), or the public channels you can join (scope=public)",
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "operationId": "Chat_create",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "8–64 characters of [A-Za-z0-9_-], unique per intended operation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An existing direct chat with that person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetailDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}": {
+      "get": {
+        "operationId": "Chat_get",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      },
+      "patch": {
+        "operationId": "Chat_update",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/members/{userId}": {
+      "put": {
+        "operationId": "Chat_putMember",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutConversationMemberDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationMemberViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a member or change their role; on yourself, join a public channel",
+        "tags": [
+          "chat"
+        ]
+      },
+      "delete": {
+        "operationId": "Chat_removeMember",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a member; on yourself, leave",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/me": {
+      "put": {
+        "operationId": "Chat_updateMine",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMyConversationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Your own pin, mute, notification level and hidden state",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/messages": {
+      "get": {
+        "operationId": "Chat_page",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "beforeSeq",
+            "required": false,
+            "in": "query",
+            "description": "Older messages: those before this seq",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "afterSeq",
+            "required": false,
+            "in": "query",
+            "description": "Newer messages: those after this seq",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "operationId": "Chat_send",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A retry of a message already stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SentMessageDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SentMessageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send over HTTP when the socket is down; retries are safe by clientMsgId",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}": {
+      "patch": {
+        "operationId": "Chat_edit",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      },
+      "delete": {
+        "operationId": "Chat_remove",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}/reactions/{emoji}": {
+      "put": {
+        "operationId": "Chat_react",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "emoji",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      },
+      "delete": {
+        "operationId": "Chat_unreact",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "emoji",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/read": {
+      "post": {
+        "operationId": "Chat_read",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadCursorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Moves your read cursor forward (it never moves back)",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/media": {
+      "get": {
+        "operationId": "Chat_media",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tab",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "files",
+                "media",
+                "audio",
+                "links"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30,
+              "type": "number"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "chat"
+        ]
+      }
     }
   },
   "info": {
@@ -5250,6 +6104,10 @@
               "away"
             ]
           },
+          "online": {
+            "type": "boolean",
+            "description": "Connected on at least one device right now"
+          },
           "statusMessage": {
             "type": "string"
           },
@@ -5270,6 +6128,7 @@
           "jobTitle",
           "status",
           "presence",
+          "online",
           "statusMessage",
           "joinedAt"
         ]
@@ -7683,6 +8542,826 @@
           "jalaliYear",
           "timeZone",
           "months"
+        ]
+      },
+      "MessagePreviewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "authorId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice",
+              "file",
+              "system"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "nullable": true
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "authorId",
+          "kind",
+          "text",
+          "deleted",
+          "createdAt"
+        ]
+      },
+      "ConversationViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "group",
+              "channel"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "topic": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "teal",
+              "violet",
+              "amber",
+              "rose",
+              "slate"
+            ]
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "postPolicy": {
+            "type": "string",
+            "enum": [
+              "everyone",
+              "admins"
+            ]
+          },
+          "projectId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "memberCount": {
+            "type": "number"
+          },
+          "myRole": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "nullable": true
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "mutedUntil": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "notificationLevel": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "none"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "unreadCount": {
+            "type": "number",
+            "description": "Capped at 100"
+          },
+          "lastSeq": {
+            "type": "number"
+          },
+          "lastReadSeq": {
+            "type": "number"
+          },
+          "lastMessage": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MessagePreviewDto"
+              }
+            ]
+          },
+          "lastMessageAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "topic",
+          "tone",
+          "isPrivate",
+          "postPolicy",
+          "projectId",
+          "memberIds",
+          "memberCount",
+          "myRole",
+          "pinned",
+          "mutedUntil",
+          "notificationLevel",
+          "hidden",
+          "unreadCount",
+          "lastSeq",
+          "lastReadSeq",
+          "lastMessage",
+          "lastMessageAt",
+          "archived",
+          "createdAt"
+        ]
+      },
+      "CreateConversationDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "group",
+              "channel"
+            ]
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Direct chats: the other person"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Groups and channels"
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 250
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "teal",
+              "violet",
+              "amber",
+              "rose",
+              "slate"
+            ]
+          },
+          "isPrivate": {
+            "type": "boolean",
+            "description": "Channels only; default true"
+          },
+          "postPolicy": {
+            "type": "string",
+            "enum": [
+              "everyone",
+              "admins"
+            ],
+            "description": "Channels only"
+          },
+          "memberIds": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "ConversationMemberViewDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ]
+          },
+          "lastReadSeq": {
+            "type": "number"
+          },
+          "lastDeliveredSeq": {
+            "type": "number"
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "userId",
+          "role",
+          "lastReadSeq",
+          "lastDeliveredSeq",
+          "joinedAt"
+        ]
+      },
+      "ConversationDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "group",
+              "channel"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "topic": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "teal",
+              "violet",
+              "amber",
+              "rose",
+              "slate"
+            ]
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "postPolicy": {
+            "type": "string",
+            "enum": [
+              "everyone",
+              "admins"
+            ]
+          },
+          "projectId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "memberCount": {
+            "type": "number"
+          },
+          "myRole": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "nullable": true
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "mutedUntil": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "notificationLevel": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "none"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "unreadCount": {
+            "type": "number",
+            "description": "Capped at 100"
+          },
+          "lastSeq": {
+            "type": "number"
+          },
+          "lastReadSeq": {
+            "type": "number"
+          },
+          "lastMessage": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MessagePreviewDto"
+              }
+            ]
+          },
+          "lastMessageAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationMemberViewDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "topic",
+          "tone",
+          "isPrivate",
+          "postPolicy",
+          "projectId",
+          "memberIds",
+          "memberCount",
+          "myRole",
+          "pinned",
+          "mutedUntil",
+          "notificationLevel",
+          "hidden",
+          "unreadCount",
+          "lastSeq",
+          "lastReadSeq",
+          "lastMessage",
+          "lastMessageAt",
+          "archived",
+          "createdAt",
+          "members"
+        ]
+      },
+      "UpdateConversationDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 250
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "teal",
+              "violet",
+              "amber",
+              "rose",
+              "slate"
+            ]
+          },
+          "isPrivate": {
+            "type": "boolean"
+          },
+          "postPolicy": {
+            "type": "string",
+            "enum": [
+              "everyone",
+              "admins"
+            ]
+          }
+        }
+      },
+      "PutConversationMemberDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ]
+          }
+        }
+      },
+      "UpdateMyConversationDto": {
+        "type": "object",
+        "properties": {
+          "pinned": {
+            "type": "boolean"
+          },
+          "mutedUntil": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "An instant; null unmutes"
+          },
+          "notificationLevel": {
+            "type": "string",
+            "enum": [
+              "all",
+              "mentions",
+              "none"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ReactionViewDto": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string"
+          },
+          "userIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "emoji",
+          "userIds"
+        ]
+      },
+      "MessageViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "authorId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice",
+              "file",
+              "system"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "nullable": true,
+            "description": "Mentions are <@userId> tokens"
+          },
+          "meta": {
+            "type": "object",
+            "nullable": true,
+            "description": "Voice: {durationSec, waveform}; system: {type, params}"
+          },
+          "attachment": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentViewDto"
+              }
+            ]
+          },
+          "replyToId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "mentionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReactionViewDto"
+            }
+          },
+          "clientMsgId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "editedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "linkedTaskId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "seq",
+          "authorId",
+          "kind",
+          "text",
+          "meta",
+          "attachment",
+          "replyToId",
+          "mentionIds",
+          "reactions",
+          "clientMsgId",
+          "editedAt",
+          "deleted",
+          "linkedTaskId",
+          "createdAt"
+        ]
+      },
+      "MessagePageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageViewDto"
+            }
+          },
+          "olderBeforeSeq": {
+            "type": "number",
+            "nullable": true
+          },
+          "newerAfterSeq": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "olderBeforeSeq",
+          "newerAfterSeq"
+        ]
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "clientMsgId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Chosen by the client; a retry with the same id returns the first message"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice",
+              "file"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "attachmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "replyToId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "durationSec": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 3600
+          },
+          "waveform": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "clientMsgId",
+          "kind"
+        ]
+      },
+      "SentMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "createdAt",
+          "duplicate"
+        ]
+      },
+      "EditMessageDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "ReadCursorDto": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "seq"
+        ]
+      },
+      "MediaItemDto": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "authorId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "attachment": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentViewDto"
+              }
+            ]
+          },
+          "durationSec": {
+            "type": "number",
+            "nullable": true
+          },
+          "url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "messageId",
+          "seq",
+          "authorId",
+          "createdAt",
+          "attachment",
+          "durationSec",
+          "url"
+        ]
+      },
+      "MediaPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaItemDto"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
         ]
       }
     }

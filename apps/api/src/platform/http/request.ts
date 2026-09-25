@@ -10,6 +10,8 @@ export interface AuthPrincipal {
   /** Unix seconds of the last password re-verification, if any. */
   readonly stepUpAt: number | null;
   readonly securityVersion: number;
+  /** Unix seconds when the access token expires (sockets keep it to enforce the expiry). */
+  readonly expiresAt: number;
 }
 
 /** The caller's standing in the workspace named by the route, established by WorkspaceMemberGuard. */

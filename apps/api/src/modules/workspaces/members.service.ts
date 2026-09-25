@@ -8,6 +8,9 @@ import { UnitOfWork } from '../../platform/db/unit-of-work.js';
 import { ApiError } from '../../platform/http/api-error.js';
 import type { MembershipContext } from '../../platform/http/request.js';
 import { OutboxWriter } from '../../platform/outbox/outbox-writer.js';
+import { PresenceDirectory } from '../../platform/realtime/presence-directory.js';
+import { RealtimePublisher } from '../../platform/realtime/realtime-publisher.js';
+import { rooms } from '../../platform/realtime/rooms.js';
 import { AbilityFactory } from '../rbac/ability.js';
 import { MembershipService } from '../rbac/membership.service.js';
 
@@ -36,8 +39,11 @@ export class MembersService {
     private readonly outbox: OutboxWriter,
     private readonly abilities: AbilityFactory,
     private readonly memberships: MembershipService,
+    private readonly presence: PresenceDirectory,
+    private readonly realtime: RealtimePublisher,
   ) {}
 
+  /** Members with their manual status and, from the gateway, whether they are connected now. */
   async list(member: MembershipContext): Promise<MemberView[]> {
     const rows = await this.uow.run({ workspaceId: member.workspaceId, userId: member.userId }, ({ tx }) =>
       tx
@@ -48,7 +54,8 @@ export class MembersService {
         .where(and(eq(workspaceMembers.workspaceId, member.workspaceId), inArray(workspaceMembers.status, ['active', 'suspended'])))
         .orderBy(asc(roles.rank), asc(users.fullName)),
     );
-    return rows.map(({ m, u, roleKey }) => this.view(m, u, roleKey as RoleId, member.ownerUserId));
+    const online = await this.presence.online(rows.map(({ u }) => u.id));
+    return rows.map(({ m, u, roleKey }) => this.view(m, u, roleKey as RoleId, member.ownerUserId, online.has(u.id)));
   }
 
   async update(actor: MembershipContext, targetUserId: string, body: UpdateMemberBody): Promise<MemberView> {
@@ -57,6 +64,7 @@ export class MembersService {
     if ((body.departmentId !== undefined || body.jobTitle !== undefined || body.status !== undefined) && !ability.can('edit', 'Member')) {
       throw ApiError.forbidden();
     }
+    const online = await this.presence.online([targetUserId]);
     return this.uow.run({ workspaceId: actor.workspaceId, userId: actor.userId }, async (unit) => {
       const target = await this.target(unit.tx, actor.workspaceId, targetUserId);
       assertCanManage(actor, { rank: target.rank, isOwner: targetUserId === actor.ownerUserId });
@@ -107,7 +115,7 @@ export class MembersService {
       });
       const [user] = await unit.tx.select().from(users).where(eq(users.id, targetUserId));
       if (!user) throw ApiError.notFound('The member');
-      return this.view(updated, user, (body.role ?? target.roleKey) as RoleId, actor.ownerUserId);
+      return this.view(updated, user, (body.role ?? target.roleKey) as RoleId, actor.ownerUserId, online.has(targetUserId));
     });
   }
 
@@ -126,6 +134,10 @@ export class MembersService {
         .update(workspaces)
         .set({ memberCount: sql`greatest(${workspaces.memberCount} - 1, 0)` })
         .where(eq(workspaces.id, actor.workspaceId));
+      // Out of every conversation of the workspace too (RFC §14 #18); their messages stay.
+      await unit.tx.execute(sql`
+        update conversation_members set left_at = now(), pinned_at = null
+        where workspace_id = ${actor.workspaceId} and user_id = ${targetUserId} and left_at is null`);
       await this.memberships.bump(unit, actor.workspaceId);
       await this.audit.write(unit.tx, {
         action: 'member.remove',
@@ -146,7 +158,21 @@ export class MembersService {
 
   /** The caller's own presence and status line in this workspace. */
   async updatePresence(member: MembershipContext, body: UpdatePresenceBody): Promise<void> {
-    await this.uow.run({ workspaceId: member.workspaceId, userId: member.userId }, async ({ tx }) => {
+    await this.uow.run({ workspaceId: member.workspaceId, userId: member.userId }, async ({ tx, afterCommit }) => {
+      afterCommit(async () => {
+        const online = await this.presence.online([member.userId]);
+        await this.realtime.emit({
+          type: 'presence:updated',
+          workspaceId: member.workspaceId,
+          rooms: [rooms.workspace(member.workspaceId)],
+          data: {
+            userId: member.userId,
+            online: online.has(member.userId),
+            presence: body.presence,
+            ...(body.statusMessage !== undefined ? { statusMessage: body.statusMessage.trim() } : {}),
+          },
+        });
+      });
       await tx
         .update(workspaceMembers)
         .set({ presenceStatus: body.presence, ...(body.statusMessage !== undefined ? { statusMessage: body.statusMessage.trim() } : {}) })
@@ -192,6 +218,7 @@ export class MembersService {
     u: typeof users.$inferSelect,
     role: RoleId,
     ownerUserId: string,
+    online: boolean,
   ): MemberView {
     return {
       userId: u.id,
@@ -205,6 +232,7 @@ export class MembersService {
       jobTitle: m.jobTitle,
       status: m.status,
       presence: m.presenceStatus,
+      online,
       statusMessage: m.statusMessage,
       joinedAt: m.joinedAt.toISOString(),
     };

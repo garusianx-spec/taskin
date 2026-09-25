@@ -31,6 +31,9 @@ export const envSchema = z
     LOG_PRETTY: bool.default(false),
     /** Number of reverse proxies in front of the API, for the client IP (`X-Forwarded-For`). */
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+    /** REST request limits per minute (RFC §2.8): per client IP, and per signed-in user. */
+    THROTTLE_IP_PER_MINUTE: z.coerce.number().int().min(1).default(300),
+    THROTTLE_USER_PER_MINUTE: z.coerce.number().int().min(1).default(600),
 
     /** As `taskin_app`, through PgBouncer in production. */
     DATABASE_URL: z.url(),
@@ -44,6 +47,19 @@ export const envSchema = z
     REDIS_CORE_URL: z.url(),
     /** No persistence: Socket.IO fan-out, presence, typing. */
     REDIS_RT_URL: z.url(),
+    /**
+     * The Socket.IO adapter on redis-rt: classic Pub/Sub, or sharded Pub/Sub (Redis 7+, one
+     * channel per room, for a Redis Cluster). Every WebSocket node must use the same.
+     */
+    RT_ADAPTER: z.enum(['redis', 'redis-sharded']).default('redis'),
+    /** Per-socket `message:send` limit (RFC §3): a burst, then a steady rate. */
+    WS_SEND_BURST: z.coerce.number().int().min(1).default(20),
+    WS_SEND_PER_SECOND: z.coerce.number().min(0.1).default(5),
+    /** This WebSocket node's name in presence bookkeeping; defaults to host, pid and a random suffix. */
+    WS_NODE_ID: z
+      .string()
+      .regex(/^[A-Za-z0-9._-]{1,64}$/)
+      .optional(),
     /** Prefix for every Redis key and BullMQ queue this deployment owns. */
     REDIS_PREFIX: z
       .string()

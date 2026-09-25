@@ -76,6 +76,7 @@ export class JwtAuthGuard implements CanActivate {
       authTime: claims.auth_time,
       stepUpAt: claims.stepup_at ?? null,
       securityVersion: claims.sv,
+      expiresAt: claims.exp,
     };
   }
 }

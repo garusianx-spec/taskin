@@ -57,3 +57,24 @@ export function isUniqueViolation(error: unknown, constraint?: string): boolean 
   const info = pgError(error);
   return info?.code === PG.uniqueViolation && (constraint === undefined || info.constraint === constraint);
 }
+
+/** node-postgres's pool, when every connection stayed busy for `connectionTimeoutMillis`. */
+const POOL_TIMEOUT = 'timeout exceeded when trying to connect';
+const NETWORK_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE']);
+
+/**
+ * The database was unreachable, overloaded or had no connection free: a condition to retry
+ * later (503), not a bug (500). Clients retry idempotent calls, and a send with the same
+ * `clientMsgId` is idempotent.
+ */
+export function isUnavailable(error: unknown): boolean {
+  const code = pgError(error)?.code;
+  // Class 08 is connection exceptions; 53300 too many connections; 57P01/57P03 shutting down or starting.
+  if (code && (code.startsWith('08') || code === '53300' || code === '57P01' || code === '57P03')) return true;
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    if (current.message === POOL_TIMEOUT || NETWORK_CODES.has((current as { code?: unknown }).code as string)) return true;
+    current = current.cause;
+  }
+  return false;
+}

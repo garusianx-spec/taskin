@@ -28,7 +28,7 @@ export interface OutboxEventMap {
   'rbac.changed': { readonly workspaceId: string; readonly userIds?: readonly string[] };
   'session.revoked': { readonly userId: string; readonly sessionIds: readonly string[]; readonly reason: string };
 
-  /* M2: projects, board and tasks. Realtime fan-out of these arrives with the gateway (M3). */
+  /* M2: projects, board and tasks. */
   'project.created': { readonly projectId: string };
   'project.updated': { readonly projectId: string; readonly fields: readonly string[] };
   'project.deleted': { readonly projectId: string };
@@ -67,6 +67,22 @@ export interface OutboxEventMap {
   'calendar.event.changed': { readonly eventId: string; readonly version: number; readonly remindAt: string | null };
   'calendar.event.deleted': { readonly eventId: string };
   'note.task_linked': { readonly noteId: string; readonly taskId: string; readonly ownerId: string };
+
+  /* M3: chat. The messages themselves are broadcast directly; these carry what must not be lost. */
+  'conversation.created': { readonly conversationId: string; readonly kind: string; readonly memberIds: readonly string[] };
+  'conversation.updated': { readonly conversationId: string; readonly fields: readonly string[] };
+  /** A member joined, rejoined or changed role. */
+  'conversation.member.added': { readonly conversationId: string; readonly userId: string; readonly role: string };
+  'conversation.member.removed': { readonly conversationId: string; readonly userId: string };
+  /** Only for messages with mentions or a reply: their notifications. */
+  'message.posted': {
+    readonly conversationId: string;
+    readonly messageId: string;
+    readonly seq: number;
+    readonly excerpt: string;
+    readonly mentionIds: readonly string[];
+    readonly replyToAuthorId: string | null;
+  };
 }
 
 /** What every task feed event carries, so fan-out never has to read the task back. */

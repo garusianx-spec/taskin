@@ -3,7 +3,7 @@ import { ThrottlerException } from '@nestjs/throttler';
 import type { Response } from 'express';
 import type { ApiErrorCode, FieldError, ProblemDetails } from '@taskin/contracts';
 import { RequestContext } from '../context/request-context.js';
-import { PG, pgError } from '../db/pg-errors.js';
+import { isUnavailable, PG, pgError } from '../db/pg-errors.js';
 import { ApiError, ERROR_CATALOGUE } from './api-error.js';
 
 interface Rendered {
@@ -66,6 +66,7 @@ export function renderException(exception: unknown): Rendered {
       return { code: 'VALIDATION_FAILED', status, detail: 'The request body could not be read.', unexpected: false };
     }
   }
+  if (isUnavailable(exception)) return { code: 'SERVICE_UNAVAILABLE', status: 503, headers: { 'Retry-After': '1' }, unexpected: true };
   const pg = pgError(exception);
   if (pg) {
     switch (pg.code) {

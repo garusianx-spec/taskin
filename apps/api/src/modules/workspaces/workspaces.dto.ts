@@ -177,6 +177,7 @@ export class MemberViewDto implements MemberView {
   @ApiProperty() readonly jobTitle!: string;
   @ApiProperty({ enum: ['active', 'suspended', 'left'] }) readonly status!: MemberStatus;
   @ApiProperty({ enum: PRESENCES }) readonly presence!: ManualPresence;
+  @ApiProperty({ description: 'Connected on at least one device right now' }) readonly online!: boolean;
   @ApiProperty() readonly statusMessage!: string;
   @ApiProperty({ format: 'date-time' }) readonly joinedAt!: string;
 }

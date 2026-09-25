@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { Writable } from 'node:stream';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Redis } from 'ioredis';
@@ -34,6 +34,10 @@ export interface Session {
 export interface TestApp {
   readonly app: NestExpressApplication;
   readonly env: Env;
+  /** `http://127.0.0.1:<port>`: REST under /api/v1, the WebSocket gateway on /rt. */
+  readonly baseUrl: string;
+  /** The raw settings the app was built from, for peers that share its database and Redis. */
+  readonly settings: Readonly<Record<string, string>>;
   readonly database: string;
   /** Bypasses row-level security (taskin_migrator): assertions and test setup only. */
   readonly admin: pg.Pool;
@@ -78,7 +82,10 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
   await creator.end();
 
   const prefix = `t${randomBytes(4).toString('hex')}`;
-  const env = envSchema.parse({
+  // One signing key per test app, shared with its peers (other nodes must verify its tokens).
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const jwks = JSON.stringify([{ ...privateKey.export({ format: 'jwk' }), kid: `test-${prefix}` }]);
+  const settings: Record<string, string> = {
     NODE_ENV: 'test',
     APP_ROLE: 'all',
     LOG_LEVEL: 'info',
@@ -100,8 +107,10 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
     OUTBOX_RELAY_ENABLED: 'false',
     QUEUE_WORKERS_ENABLED: 'false',
     TRUST_PROXY: '1',
+    JWT_PRIVATE_JWKS: jwks,
     ...overrides,
-  });
+  };
+  const env = envSchema.parse(settings);
 
   const logs: LogLine[] = [];
   const rawLogs: string[] = [];
@@ -132,6 +141,8 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
   return {
     app,
     env,
+    baseUrl,
+    settings,
     database,
     admin,
     appPool,
@@ -166,6 +177,34 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
       await dropper.connect();
       await dropper.query(`drop database if exists ${database} with (force)`);
       await dropper.end();
+    },
+  };
+}
+
+export interface Peer {
+  readonly app: NestExpressApplication;
+  readonly baseUrl: string;
+  close(): Promise<void>;
+}
+
+/**
+ * Another node of the same deployment: same database, same Redis prefix, same signing key, its
+ * own process role (a second WebSocket node, a REST node without sockets …).
+ */
+export async function createPeer(t: TestApp, overrides: Record<string, string>): Promise<Peer> {
+  const env = envSchema.parse({ ...t.settings, ...overrides });
+  const app = await createApp(env, { logDestination: new Writable({ write: (_chunk, _encoding, done) => done() }) });
+  await app.listen(0, '127.0.0.1');
+  const address = app.getHttpServer().address();
+  const baseUrl = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}` : '';
+  let closed = false;
+  return {
+    app,
+    baseUrl,
+    async close() {
+      if (closed) return;
+      closed = true;
+      await app.close();
     },
   };
 }

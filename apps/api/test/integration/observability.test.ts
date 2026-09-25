@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { Test } from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthSession, OtpVerifyResult, RoleView, TaskDetail, UploadTicket, UploadView, WorkflowView } from '@taskin/contracts';
@@ -212,6 +212,24 @@ describe('M1 checklist: audit trail and correlation', () => {
     await traced('patch', '/api/v1/workspaces/{workspaceId}/calendar/events/{eventId}', ev, (r) => r.set(bearer(user)).set('If-Match', `"${event.version}"`).send({ title: 'جلسه ماهانه' }));
     await traced('delete', '/api/v1/workspaces/{workspaceId}/calendar/events/{eventId}', ev, (r) => r.set(bearer(user)));
     await traced('post', '/api/v1/me/notifications/read', '/api/v1/me/notifications/read', (r) => r.set(bearer(user)).send({ all: true }));
+
+    // Chat (M3).
+    const cv = '/api/v1/workspaces/{workspaceId}/conversations';
+    const conversation = (await traced('post', cv, `${ws}/conversations`, (r) => idem(r).send({ kind: 'group', title: 'ردیابی', memberIds: [] }))).body;
+    const cn = `${ws}/conversations/${conversation.id}`;
+    await traced('patch', `${cv}/{conversationId}`, cn, (r) => r.set(bearer(user)).send({ topic: 'موضوع' }));
+    await traced('put', `${cv}/{conversationId}/members/{userId}`, `${cn}/members/${joiner.userId}`, (r) => r.set(bearer(user)).send({}));
+    await traced('put', `${cv}/{conversationId}/me`, `${cn}/me`, (r) => r.set(bearer(user)).send({ pinned: true }));
+    const message = (
+      await traced('post', `${cv}/{conversationId}/messages`, `${cn}/messages`, (r) => r.set(bearer(user)).send({ clientMsgId: randomUUID(), kind: 'text', text: 'پیام' }))
+    ).body;
+    const mg = `${cn}/messages/${message.id}`;
+    await traced('patch', `${cv}/{conversationId}/messages/{messageId}`, mg, (r) => r.set(bearer(user)).send({ text: 'پیام ویرایش‌شده' }));
+    await traced('put', `${cv}/{conversationId}/messages/{messageId}/reactions/{emoji}`, `${mg}/reactions/${encodeURIComponent('👍')}`, (r) => r.set(bearer(user)));
+    await traced('delete', `${cv}/{conversationId}/messages/{messageId}/reactions/{emoji}`, `${mg}/reactions/${encodeURIComponent('👍')}`, (r) => r.set(bearer(user)));
+    await traced('post', `${cv}/{conversationId}/read`, `${cn}/read`, (r) => r.set(bearer(user)).send({ seq: 1 }));
+    await traced('delete', `${cv}/{conversationId}/messages/{messageId}`, mg, (r) => r.set(bearer(user)));
+    await traced('delete', `${cv}/{conversationId}/members/{userId}`, `${cn}/members/${joiner.userId}`, (r) => r.set(bearer(user)));
     await traced('delete', '/api/v1/workspaces/{workspaceId}/projects/{projectId}', pj, (r) => r.set(bearer(user)));
 
     // Ownership, removal, deletion, and finally signing out.
@@ -353,6 +371,33 @@ describe('M1 checklist: query budgets (no N+1)', () => {
       await budget(as, `${ws}/tasks?smart=my-tasks`, 2);
       await budget(as, `${ws}/tasks?smart=due-soon`, 2);
       await budget(as, `${ws}/projects`, 2);
+    }
+  });
+
+  it('holds the M3 chat reads to their budgets: conversation list ≤ 2, history page ≤ 2', async () => {
+    const { owner, workspace } = await ownerWithWorkspace(t, 'گفتگوی بودجه');
+    await usePlan(t, workspace.id, 'team');
+    const member = await addMember(t, owner, workspace.id, 'member');
+    const ws = `/api/v1/workspaces/${workspace.id}`;
+    let last = '';
+    // Several conversations, each with messages, reactions and mentions, to expose any per-row query.
+    for (let index = 0; index < 6; index += 1) {
+      const conversation = (
+        await t.http().post(`${ws}/conversations`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ kind: 'group', title: `گروه ${index}`, memberIds: [member.userId] })
+      ).body;
+      last = conversation.id;
+      for (let message = 0; message < 5; message += 1) {
+        const sent = (await t.http().post(`${ws}/conversations/${conversation.id}/messages`).set(bearer(owner)).send({ clientMsgId: randomUUID(), kind: 'text', text: `<@${member.userId}> ${message}` })).body;
+        await t.http().put(`${ws}/conversations/${conversation.id}/messages/${sent.id}/reactions/${encodeURIComponent('👍')}`).set(bearer(member));
+      }
+    }
+    for (const as of [owner, member]) {
+      for (const path of [`${ws}/conversations`, `${ws}/conversations/${last}/messages`]) {
+        await t.http().get(path).set(bearer(as));
+        const response = await t.http().get(path).set(bearer(as));
+        expect(response.status, path).toBe(200);
+        expect({ path, statements: sqlCount(response) <= 2 }).toEqual({ path, statements: true });
+      }
     }
   });
 

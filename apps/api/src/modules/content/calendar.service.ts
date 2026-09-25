@@ -258,7 +258,8 @@ export class CalendarService {
    * for (RFC §9), then notifies the author and the attendees who are still members.
    */
   async remind(workspaceId: string, eventId: string, version: number): Promise<'sent' | 'stale'> {
-    return this.uow.run({ workspaceId, userId: null }, async ({ tx }) => {
+    return this.uow.run({ workspaceId, userId: null }, async (unit) => {
+      const { tx } = unit;
       const [row] = await tx.select().from(calendarEvents).where(and(eq(calendarEvents.workspaceId, workspaceId), eq(calendarEvents.id, eventId)));
       if (!row || row.deletedAt || row.version !== version) return 'stale';
       const attendees = (await tx.select({ userId: calendarEventAttendees.userId }).from(calendarEventAttendees).where(eq(calendarEventAttendees.eventId, eventId))).map(
@@ -272,7 +273,7 @@ export class CalendarService {
           .where(and(eq(workspaceMembers.workspaceId, workspaceId), inArray(workspaceMembers.userId, people), eq(workspaceMembers.status, 'active')))
       ).map((entry) => entry.userId);
       await this.feed.notify(
-        tx,
+        unit,
         active.map((recipientId) => ({
           workspaceId,
           recipientId,
