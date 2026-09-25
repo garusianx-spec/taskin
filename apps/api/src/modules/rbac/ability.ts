@@ -5,6 +5,8 @@ import {
   PERMISSION_MODULE_IDS,
   type PermissionActionId,
   type PermissionModuleId,
+  type ProjectRole,
+  type ProjectVisibility,
   type RolePermissions,
   rowFromCells,
 } from '@taskin/contracts';
@@ -13,15 +15,22 @@ import type { MembershipContext } from '../../platform/http/request.js';
 /**
  * Workspace-scope authorisation (RFC §5.3). Each module of the permission matrix governs a set
  * of CASL subjects; a granted cell `module:action` becomes `can(action, subject)` for each of
- * them. Project and channel overlays arrive with those modules (M2, M3).
+ * them. The channel overlay arrives with chat (M3).
  */
 export const MODULE_SUBJECTS = {
   messages: ['Conversation', 'Message', 'Reaction'],
-  boards: ['Project', 'BoardColumn', 'Task', 'Subtask', 'TaskComment', 'CalendarEvent'],
+  boards: ['Project', 'BoardColumn', 'Task', 'Subtask', 'TaskComment', 'CalendarEvent', 'Label'],
   files: ['File'],
   reports: ['Report'],
   members: ['Member', 'Invitation', 'Role', 'WorkspaceSettings', 'Department'],
 } as const satisfies Record<PermissionModuleId, readonly string[]>;
+
+/**
+ * The boards subjects that belong to one project. With a project scope their rules carry a
+ * `projectId` condition; the workflow's columns and the labels are workspace-wide.
+ */
+export const PROJECT_SUBJECTS = ['Project', 'Task', 'Subtask', 'TaskComment', 'CalendarEvent'] as const;
+export type ProjectSubjectName = (typeof PROJECT_SUBJECTS)[number];
 
 export type SubjectName = (typeof MODULE_SUBJECTS)[PermissionModuleId][number] | 'Workspace' | 'all';
 export type Action = PermissionActionId | 'manage';
@@ -31,7 +40,14 @@ export interface MemberSubject {
   readonly userId: string;
 }
 
-export type AppSubject = SubjectName | (MemberSubject & ForcedSubject<'Member'>);
+export interface ProjectScopedSubject {
+  readonly projectId: string;
+}
+
+/** One tagged variant per project subject, so CASL can tell `Task` rules from `Project` rules. */
+type ProjectScopedSubjects = { [K in ProjectSubjectName]: ProjectScopedSubject & ForcedSubject<K> }[ProjectSubjectName];
+
+export type AppSubject = SubjectName | (MemberSubject & ForcedSubject<'Member'>) | ProjectScopedSubjects;
 export type AppAbility = MongoAbility<[Action, AppSubject]>;
 
 export const cell = (module: PermissionModuleId, action: PermissionActionId) => `${module}:${action}`;
@@ -51,9 +67,59 @@ export function grantsToRow(grants: readonly string[]): RolePermissions {
   );
 }
 
+/* ------------------------------------------------------------------ project overlay */
+
+/** What each project role allows inside its project (RFC §5.3 rule 3). */
+export const PROJECT_ROLE_ACTIONS: Readonly<Record<ProjectRole, readonly PermissionActionId[]>> = {
+  lead: PERMISSION_ACTION_IDS,
+  contributor: ['view', 'create', 'edit', 'assign'],
+  viewer: ['view'],
+};
+
+/** Guests never hold more than `contributor` in a project, whatever they were given. */
+export function effectiveProjectRole(member: Pick<MembershipContext, 'roleKey'>, role: ProjectRole): ProjectRole {
+  return member.roleKey === 'guest' && role === 'lead' ? 'contributor' : role;
+}
+
+/** The boards actions a member's workspace role grants. */
+export function boardGrants(member: Pick<MembershipContext, 'grants'>): PermissionActionId[] {
+  return PERMISSION_ACTION_IDS.filter((action) => member.grants.includes(cell('boards', action)));
+}
+
+/**
+ * What `member` may do with the work of one project, in matrix actions. Empty means the project
+ * is invisible to them. The owner may do everything; a project role replaces the workspace role
+ * inside its project (widening or narrowing it); without one, a workspace-visible project follows
+ * the workspace's boards grants, and a private project is invisible. Guests only ever see the
+ * projects they are members of.
+ *
+ * `projectVisibilitySql` in work/access.ts is the same rule in SQL, for list queries; the
+ * conformance test holds the two to each other.
+ */
+export function projectActions(
+  member: Pick<MembershipContext, 'isOwner' | 'roleKey' | 'grants'>,
+  project: { readonly visibility: ProjectVisibility; readonly role: ProjectRole | null },
+): readonly PermissionActionId[] {
+  if (member.isOwner) return PERMISSION_ACTION_IDS;
+  if (project.role) return PROJECT_ROLE_ACTIONS[effectiveProjectRole(member, project.role)];
+  if (project.visibility === 'workspace' && member.roleKey !== 'guest') {
+    const grants = boardGrants(member);
+    return grants.includes('view') ? grants : [];
+  }
+  return [];
+}
+
+/** Per-project actions for every project the member can see, keyed by project id. */
+export type ProjectScope = ReadonlyMap<string, readonly PermissionActionId[]>;
+
 @Injectable()
 export class AbilityFactory {
-  forMember(member: MembershipContext): AppAbility {
+  /**
+   * The member's ability. Without a project scope, boards grants apply to every project (the
+   * coarse, route-level view of the matrix). With one, the project subjects are allowed only in
+   * the projects of the scope, with that project's actions.
+   */
+  forMember(member: MembershipContext, scope?: ProjectScope): AppAbility {
     const { can, cannot, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
     // Membership alone lets you see the workspace you belong to.
     can('view', 'Workspace');
@@ -67,7 +133,15 @@ export class AbilityFactory {
       const [module, action] = entry.split(':') as [PermissionModuleId, PermissionActionId];
       const subjects = MODULE_SUBJECTS[module];
       if (!subjects) continue;
-      for (const subject of subjects) can(action, subject);
+      for (const subject of subjects) {
+        if (scope && (PROJECT_SUBJECTS as readonly string[]).includes(subject)) continue;
+        can(action, subject);
+      }
+    }
+    if (scope) {
+      for (const [projectId, actions] of scope) {
+        for (const subject of PROJECT_SUBJECTS) can([...actions], subject, { projectId });
+      }
     }
     return build();
   }

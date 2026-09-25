@@ -19,6 +19,8 @@
     "db:check": "drizzle-kit check",
     "db:migrate": "tsc -b && node --enable-source-maps dist/cli/migrate.js",
     "db:snapshot": "tsc -b && node --enable-source-maps dist/cli/schema-snapshot.js --write",
+    "perf:seed": "tsc -b && node --enable-source-maps dist/cli/perf.js --seed",
+    "perf:measure": "tsc -b && node --enable-source-maps dist/cli/perf.js --measure",
     "openapi": "tsc -b && node --enable-source-maps dist/cli/openapi.js"
   },
   "dependencies": {
@@ -44,6 +46,7 @@
     "class-validator": "0.15.1",
     "cookie-parser": "1.4.7",
     "drizzle-orm": "0.45.3",
+    "fractional-indexing": "^4.0.0",
     "helmet": "8.3.0",
     "ioredis": "6.0.0",
     "jose": "6.2.12",

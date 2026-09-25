@@ -12,6 +12,7 @@ interface Rendered {
   readonly detail?: string;
   readonly errors?: readonly FieldError[];
   readonly headers?: Readonly<Record<string, string>>;
+  readonly current?: unknown;
   /** Logged at error level with the stack: a bug or an outage, not a client mistake. */
   readonly unexpected: boolean;
 }
@@ -47,6 +48,7 @@ export function renderException(exception: unknown): Rendered {
       detail: exception.detail,
       errors: exception.fieldErrors,
       headers: exception.headers,
+      current: exception.current,
       unexpected: exception.getStatus() >= 500,
     };
   }
@@ -77,6 +79,8 @@ export function renderException(exception: unknown): Rendered {
         return { code: 'VALIDATION_FAILED', status: 400, unexpected: false };
       case PG.ownerImmutable:
         return { code: 'OWNER_IMMUTABLE', status: 403, unexpected: false };
+      case PG.workflowCategory:
+        return { code: 'WORKFLOW_CATEGORY_REQUIRED', status: 409, unexpected: false };
       case PG.serializationFailure:
       case PG.deadlockDetected:
       case PG.lockNotAvailable:
@@ -128,6 +132,7 @@ export class ProblemFilter implements ExceptionFilter {
       ...(rendered.detail && rendered.detail !== catalogue.title ? { detail: rendered.detail } : {}),
       requestId,
       ...(rendered.errors?.length ? { errors: rendered.errors } : {}),
+      ...(rendered.current !== undefined ? { current: rendered.current } : {}),
     };
     if (response.headersSent) return;
     for (const [name, value] of Object.entries(rendered.headers ?? {})) response.setHeader(name, value);

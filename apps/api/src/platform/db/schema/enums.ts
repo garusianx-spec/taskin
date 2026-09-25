@@ -31,3 +31,44 @@ export const invitationStatus = pgEnum('invitation_status', ['pending', 'accepte
 export const permissionModule = pgEnum('permission_module', PERMISSION_MODULE_IDS);
 
 export const permissionAction = pgEnum('permission_action', PERMISSION_ACTION_IDS);
+
+/* ---------------------------------------------------------------- M2: work and content */
+
+export const tagTone = pgEnum('tag_tone', ['gray', 'blue', 'teal', 'green', 'amber', 'red', 'pink', 'violet']);
+
+export const projectRole = pgEnum('project_role', ['lead', 'contributor', 'viewer']);
+
+export const projectVisibility = pgEnum('project_visibility', ['workspace', 'private']);
+
+export const taskStatus = pgEnum('task_status', ['todo', 'in-progress', 'review', 'done']);
+
+export const taskPriority = pgEnum('task_priority', ['urgent', 'high', 'medium', 'low']);
+
+export const attachmentKind = pgEnum('attachment_kind', ['image', 'video', 'document', 'sheet', 'archive', 'audio']);
+
+export const attachmentStatus = pgEnum('attachment_status', ['pending', 'scanning', 'ready', 'rejected', 'deleted']);
+
+export const eventKind = pgEnum('event_kind', ['meeting', 'reminder', 'milestone']);
+
+export const attendeeResponse = pgEnum('attendee_response', ['pending', 'accepted', 'declined', 'tentative']);
+
+/** Hyphenated, as `NotificationKind` in the contracts (the RFC's convention: no mapping layer). */
+export const notificationKind = pgEnum('notification_kind', [
+  'task-assigned',
+  'status-changed',
+  'comment',
+  'mention',
+  'reply',
+  'invitation',
+  'event-reminder',
+  'member-joined',
+]);
+
+export const activityKind = pgEnum('activity_kind', [
+  'task-assigned',
+  'task-completed',
+  'task-commented',
+  'message-mention',
+  'file-shared',
+  'member-joined',
+]);

@@ -27,6 +27,56 @@ export interface OutboxEventMap {
   'member.removed': { readonly workspaceId: string; readonly userId: string };
   'rbac.changed': { readonly workspaceId: string; readonly userIds?: readonly string[] };
   'session.revoked': { readonly userId: string; readonly sessionIds: readonly string[]; readonly reason: string };
+
+  /* M2: projects, board and tasks. Realtime fan-out of these arrives with the gateway (M3). */
+  'project.created': { readonly projectId: string };
+  'project.updated': { readonly projectId: string; readonly fields: readonly string[] };
+  'project.deleted': { readonly projectId: string };
+  'project.member.changed': { readonly projectId: string; readonly userId: string; readonly role: string | null };
+  'board.column.added': { readonly workflowId: string; readonly columnId: string; readonly version: number };
+  'board.column.updated': { readonly workflowId: string; readonly columnId: string; readonly version: number };
+  'board.column.removed': {
+    readonly workflowId: string;
+    readonly columnId: string;
+    readonly version: number;
+    readonly disposition: 'migrate' | 'archive' | 'empty';
+    readonly targetColumnId: string | null;
+    /** Up to 500; beyond that clients resync the board. */
+    readonly taskIds: readonly string[];
+    readonly resync: boolean;
+  };
+  'task.created': { readonly taskId: string; readonly projectId: string; readonly columnId: string; readonly version: number };
+  'task.updated': { readonly taskId: string; readonly projectId: string; readonly version: number; readonly fields: readonly string[] };
+  'task.moved': {
+    readonly taskId: string;
+    readonly projectId: string;
+    readonly fromColumnId: string;
+    readonly toColumnId: string;
+    readonly position: string;
+    readonly version: number;
+  };
+  'task.deleted': { readonly taskId: string; readonly projectId: string };
+  /** Feed events: in-app notifications and the activity feed are fanned out from these. */
+  'task.assigned': TaskFeedPayload & { readonly assigneeIds: readonly string[] };
+  'task.status_changed': TaskFeedPayload & { readonly from: string; readonly to: string };
+  'task.commented': TaskFeedPayload & { readonly commentId: string; readonly excerpt: string; readonly replyToAuthorId: string | null };
+  'task.file_attached': TaskFeedPayload & { readonly attachmentId: string; readonly fileName: string };
+  /** An upload completed: the worker scans it, then marks it ready. */
+  'file.uploaded': { readonly attachmentId: string };
+  /** Schedules (or, with `remindAt: null`, cancels) the reminder of this event version. */
+  'calendar.event.changed': { readonly eventId: string; readonly version: number; readonly remindAt: string | null };
+  'calendar.event.deleted': { readonly eventId: string };
+  'note.task_linked': { readonly noteId: string; readonly taskId: string; readonly ownerId: string };
+}
+
+/** What every task feed event carries, so fan-out never has to read the task back. */
+export interface TaskFeedPayload {
+  readonly taskId: string;
+  readonly projectId: string;
+  readonly code: string;
+  readonly title: string;
+  /** Who should hear about it, besides those the event names (assignees, reviewer, creator). */
+  readonly watcherIds: readonly string[];
 }
 
 export type OutboxEventType = keyof OutboxEventMap;

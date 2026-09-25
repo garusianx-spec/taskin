@@ -43,6 +43,8 @@ export const PG = {
   insufficientPrivilege: '42501',
   /** Raised by the locked-role triggers. */
   ownerImmutable: 'TK001',
+  /** Raised by the workflow trigger: a board lost its last live to-do or done column. */
+  workflowCategory: 'TK002',
 } as const;
 
 /** Failures a fresh attempt of the same transaction can succeed at. */

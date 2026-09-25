@@ -41,6 +41,13 @@ export const ERROR_CATALOGUE: Readonly<Record<ApiErrorCode, { readonly status: n
   ALREADY_MEMBER: { status: 409, title: 'Already a member' },
   UPLOAD_INVALID: { status: 422, title: 'The uploaded file is not acceptable' },
   DEPARTMENT_IN_USE: { status: 409, title: 'The department still has members or invitations' },
+  PROJECT_KEY_TAKEN: { status: 409, title: 'Another project uses that key' },
+  PROJECT_ARCHIVED: { status: 409, title: 'The project is archived' },
+  COLUMN_GONE: { status: 409, title: 'The column was deleted' },
+  WORKFLOW_CATEGORY_REQUIRED: { status: 409, title: 'The board needs at least one to-do and one done column' },
+  BOARD_CHANGED: { status: 409, title: 'The board changed; reload it' },
+  ASSIGNEE_NO_ACCESS: { status: 422, title: 'An assignee cannot see this project' },
+  NOTE_CATEGORY_IN_USE: { status: 409, title: 'The category still has notes' },
 };
 
 /**
@@ -74,4 +81,35 @@ export class ApiError extends HttpException {
   static rateLimited(retryAfterSeconds: number, detail?: string): ApiError {
     return new ApiError('RATE_LIMITED', detail, undefined, { 'Retry-After': String(Math.max(1, Math.ceil(retryAfterSeconds))) });
   }
+
+  /**
+   * 412: the client's `If-Match` (or `expectedVersion`) is stale. Carries the resource as it is now
+   * and its version as the `ETag`, so the client can merge field by field without another request.
+   */
+  static stale(current: { readonly version: number }): ApiError {
+    const error = new ApiError('PRECONDITION_FAILED', undefined, undefined, { ETag: `"${current.version}"` });
+    error.current = current;
+    return error;
+  }
+
+  /** With PRECONDITION_FAILED: the current representation (see `stale`). */
+  current?: unknown;
+}
+
+/**
+ * Reads a strong or weak `If-Match` version (`"3"`, `W/"3"` or `3`). `undefined` when the header
+ * is missing (428), a validation error when it is not a version.
+ */
+export function parseIfMatch(header: string | undefined): number | undefined {
+  if (header === undefined || header.trim() === '') return undefined;
+  const match = /^(?:W\/)?"?(\d{1,9})"?$/.exec(header.trim());
+  if (!match?.[1]) throw ApiError.validation([{ field: 'If-Match', message: 'must be the version, e.g. "3"' }]);
+  return Number(match[1]);
+}
+
+/** Like `parseIfMatch`, but the header is required. */
+export function requireIfMatch(header: string | undefined): number {
+  const version = parseIfMatch(header);
+  if (version === undefined) throw new ApiError('PRECONDITION_REQUIRED');
+  return version;
 }

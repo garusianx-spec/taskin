@@ -1,6 +1,6 @@
-import { DEFAULT_PERMISSION_MATRIX, grantedCells, type RoleId, SYSTEM_ROLES } from '@taskin/contracts';
+import { DEFAULT_PERMISSION_MATRIX, grantedCells, type RoleId, SYSTEM_ROLES, type TaskStatus } from '@taskin/contracts';
 import type { Tx } from '../../platform/db/database.js';
-import { departments, rolePermissions, roles } from '../../platform/db/schema/all.js';
+import { boardColumns, departments, rolePermissions, roles, workflows } from '../../platform/db/schema/all.js';
 
 /** The departments a new workspace starts with (the web app's defaults). */
 export const DEFAULT_DEPARTMENTS: readonly string[] = [
@@ -12,8 +12,17 @@ export const DEFAULT_DEPARTMENTS: readonly string[] = [
   'عملیات و پشتیبانی',
 ];
 
+/** The four built-in board columns, start to end (the web app's `BUILT_IN_COLUMNS`). */
+export const BUILT_IN_COLUMNS: readonly { readonly title: string; readonly status: TaskStatus; readonly position: string }[] = [
+  { title: 'برای انجام', status: 'todo', position: 'a0' },
+  { title: 'در حال انجام', status: 'in-progress', position: 'a1' },
+  { title: 'منتظر تایید', status: 'review', position: 'a2' },
+  { title: 'انجام شد', status: 'done', position: 'a3' },
+];
+
 /**
- * Seeds a new workspace's five system roles with the default matrix, and its departments.
+ * Seeds a new workspace's five system roles with the default matrix, its departments, and the
+ * default workflow with the four built-in columns.
  * The owner role gets no permission rows: it holds everything implicitly and is locked.
  * Returns role ids by key.
  */
@@ -30,5 +39,9 @@ export async function seedWorkspace(tx: Tx, workspaceId: string): Promise<Record
   if (grants.length > 0) await tx.insert(rolePermissions).values(grants);
 
   await tx.insert(departments).values(DEFAULT_DEPARTMENTS.map((name, position) => ({ workspaceId, name, position })));
+
+  const [workflow] = await tx.insert(workflows).values({ workspaceId, name: 'پیش‌فرض' }).returning({ id: workflows.id });
+  if (!workflow) throw new Error('workflow insert returned nothing');
+  await tx.insert(boardColumns).values(BUILT_IN_COLUMNS.map((column) => ({ workspaceId, workflowId: workflow.id, ...column, isBuiltin: true })));
   return ids;
 }

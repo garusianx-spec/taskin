@@ -29,3 +29,11 @@ export const createdAt = () => instant().notNull().defaultNow();
 
 /** Maintained by the `app.touch_updated_at` trigger; the default covers the insert. */
 export const updatedAt = () => instant().notNull().defaultNow();
+
+/**
+ * A fractional-index position (board columns, cards, subtasks). Byte order (`COLLATE "C"`) is the
+ * order `fractional-indexing` generates keys in; a locale collation would sort them differently.
+ */
+export const position = customType<{ data: string }>({
+  dataType: () => 'text COLLATE "C"',
+});

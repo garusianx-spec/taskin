@@ -5,33 +5,61 @@ import pg from 'pg';
 import { AppConfig } from '../../config/app-config.js';
 import { Database } from '../db/database.js';
 import { outboxEvents } from '../db/schema/all.js';
-import { type JobHeaders, type NotificationJobs, Queues } from '../queue/queues.js';
+import { type JobHeaders, type NotificationJobs, Queues, type WorkJobs } from '../queue/queues.js';
 import type { OutboxEventMap, OutboxEventType } from './outbox-writer.js';
 
 type OutboxRow = typeof outboxEvents.$inferSelect;
 
-interface Publication {
-  readonly name: keyof NotificationJobs;
-  readonly payload: NotificationJobs[keyof NotificationJobs];
-}
+type Publication =
+  | { readonly queue: 'notifications'; readonly name: keyof NotificationJobs; readonly payload: NotificationJobs[keyof NotificationJobs] }
+  | {
+      readonly queue: 'work';
+      readonly name: keyof WorkJobs;
+      readonly payload: WorkJobs[keyof WorkJobs];
+      /** Overrides the event-derived id (reminders are keyed by event version). */
+      readonly jobId?: string;
+      readonly delay?: number;
+    };
+
+/** The events whose side effects land in inboxes and the activity feed. */
+const FEED_EVENTS: ReadonlySet<OutboxEventType> = new Set(['task.assigned', 'task.status_changed', 'task.commented', 'task.file_attached', 'member.joined']);
 
 /** What each event turns into. Events without work (yet) are simply marked published. */
-function publicationsFor(row: OutboxRow): readonly Publication[] {
+export function publicationsFor(row: OutboxRow, now: number): readonly Publication[] {
   const type = row.eventType as OutboxEventType;
+  if (FEED_EVENTS.has(type) && row.workspaceId) {
+    return [
+      {
+        queue: 'work',
+        name: 'feed.fanout',
+        payload: { eventId: row.id, workspaceId: row.workspaceId, type, actorId: row.headers.actorId ?? null, payload: row.payload },
+      },
+    ];
+  }
   switch (type) {
     case 'notification.sms':
-      return [{ name: 'sms.send', payload: row.payload as unknown as OutboxEventMap['notification.sms'] }];
+      return [{ queue: 'notifications', name: 'sms.send', payload: row.payload as unknown as OutboxEventMap['notification.sms'] }];
     case 'notification.email':
-      return [{ name: 'mail.send', payload: row.payload as unknown as OutboxEventMap['notification.email'] }];
-    // Realtime fan-out for these arrives with the Socket.IO gateway (M3).
-    case 'workspace.created':
-    case 'workspace.deleted':
-    case 'workspace.purged':
-    case 'member.joined':
-    case 'member.removed':
-    case 'rbac.changed':
-    case 'session.revoked':
-      return [];
+      return [{ queue: 'notifications', name: 'mail.send', payload: row.payload as unknown as OutboxEventMap['notification.email'] }];
+    case 'file.uploaded': {
+      const payload = row.payload as unknown as OutboxEventMap['file.uploaded'];
+      return row.workspaceId ? [{ queue: 'work', name: 'file.scan', payload: { workspaceId: row.workspaceId, attachmentId: payload.attachmentId } }] : [];
+    }
+    case 'calendar.event.changed': {
+      const payload = row.payload as unknown as OutboxEventMap['calendar.event.changed'];
+      if (!payload.remindAt || !row.workspaceId) return [];
+      return [
+        {
+          queue: 'work',
+          name: 'event.remind',
+          payload: { workspaceId: row.workspaceId, eventId: payload.eventId, version: payload.version },
+          // One job per event version: an edit schedules a new one, and the old one no-ops.
+          jobId: `event-${payload.eventId}-v${payload.version}`,
+          delay: Math.max(0, Date.parse(payload.remindAt) - now),
+        },
+      ];
+    }
+    // Realtime fan-out for the rest arrives with the Socket.IO gateway (M3).
     default:
       return [];
   }
@@ -94,17 +122,23 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
       .limit(BATCH);
     if (rows.length === 0) return 0;
 
-    const jobs = rows.flatMap((row) =>
-      publicationsFor(row).map((publication) => ({
-        name: publication.name,
-        data: {
-          headers: { requestId: row.headers.requestId, traceId: row.headers.traceId, eventId: row.id } satisfies JobHeaders,
-          payload: publication.payload,
-        },
-        opts: { jobId: `evt-${row.id}-${publication.name}` },
-      })),
-    );
-    if (jobs.length > 0) await this.queues.notifications.addBulk(jobs);
+    const now = Date.now();
+    const publications = rows.flatMap((row) => publicationsFor(row, now).map((publication) => ({ row, publication })));
+    const job = ({ row, publication }: (typeof publications)[number]) => ({
+      name: publication.name,
+      data: {
+        headers: { requestId: row.headers.requestId, traceId: row.headers.traceId, eventId: row.id } satisfies JobHeaders,
+        payload: publication.payload,
+      },
+      opts: {
+        jobId: (publication.queue === 'work' && publication.jobId) || `evt-${row.id}-${publication.name}`,
+        ...(publication.queue === 'work' && publication.delay ? { delay: publication.delay } : {}),
+      },
+    });
+    const notifications = publications.filter((entry) => entry.publication.queue === 'notifications').map(job);
+    const work = publications.filter((entry) => entry.publication.queue === 'work').map(job);
+    if (notifications.length > 0) await this.queues.notifications.addBulk(notifications as Parameters<Queues['notifications']['addBulk']>[0]);
+    if (work.length > 0) await this.queues.work.addBulk(work as Parameters<Queues['work']['addBulk']>[0]);
 
     await this.database.db
       .update(outboxEvents)

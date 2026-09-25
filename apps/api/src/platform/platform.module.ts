@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { AppConfig } from '../config/app-config.js';
 import { AuditWriter } from './audit/audit-writer.js';
+import { Clock } from './clock/clock.js';
 import { RequestContext } from './context/request-context.js';
 import { SecretBox } from './crypto/crypto.js';
 import { Database } from './db/database.js';
@@ -13,6 +14,7 @@ import { SmsService } from './sms/sms.js';
 import { StorageService } from './storage/storage.js';
 
 const providers = [
+  Clock,
   RequestContext,
   Database,
   UnitOfWork,

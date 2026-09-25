@@ -9,7 +9,24 @@ export interface NotificationJobs {
   'mail.send': OutboxEventMap['notification.email'];
 }
 
-export type MaintenanceJob = 'audit.partitions' | 'workspace.purge' | 'cleanup';
+/** Domain side effects of outbox events: fan-out to inboxes and the feed, file scanning. */
+export interface WorkJobs {
+  'feed.fanout': FeedFanoutJob;
+  'file.scan': { readonly workspaceId: string; readonly attachmentId: string };
+  /** A calendar reminder; stale versions no-op when they fire. */
+  'event.remind': { readonly workspaceId: string; readonly eventId: string; readonly version: number };
+}
+
+/** One outbox event, as the fan-out handler needs it. */
+export interface FeedFanoutJob {
+  readonly eventId: number;
+  readonly workspaceId: string;
+  readonly type: string;
+  readonly actorId: string | null;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
+export type MaintenanceJob = 'audit.partitions' | 'workspace.purge' | 'cleanup' | 'files.gc';
 
 /** Correlation carried from the request (or outbox row) that caused a job. */
 export interface JobHeaders {
@@ -23,7 +40,12 @@ export interface NotificationJobData<N extends keyof NotificationJobs = keyof No
   readonly payload: NotificationJobs[N];
 }
 
-export const QUEUE_NAMES = { notifications: 'notifications', maintenance: 'maintenance' } as const;
+export interface WorkJobData<N extends keyof WorkJobs = keyof WorkJobs> {
+  readonly headers: JobHeaders;
+  readonly payload: WorkJobs[N];
+}
+
+export const QUEUE_NAMES = { notifications: 'notifications', work: 'work', maintenance: 'maintenance' } as const;
 
 /** BullMQ on `redis-core`. Blocking worker connections need `maxRetriesPerRequest: null`. */
 export function queueConnection(config: AppConfig): ConnectionOptions {
@@ -37,6 +59,7 @@ export function queuePrefix(config: AppConfig): string {
 @Injectable()
 export class Queues implements OnModuleDestroy {
   readonly notifications: Queue<NotificationJobData, void, keyof NotificationJobs>;
+  readonly work: Queue<WorkJobData, unknown, keyof WorkJobs>;
   readonly maintenance: Queue<Record<string, never>, unknown, string>;
 
   constructor(config: AppConfig) {
@@ -51,12 +74,14 @@ export class Queues implements OnModuleDestroy {
       },
     };
     this.notifications = new Queue(QUEUE_NAMES.notifications, options);
+    this.work = new Queue(QUEUE_NAMES.work, options);
     this.maintenance = new Queue(QUEUE_NAMES.maintenance, options);
     this.notifications.on('error', () => undefined);
+    this.work.on('error', () => undefined);
     this.maintenance.on('error', () => undefined);
   }
 
   async onModuleDestroy(): Promise<void> {
-    await Promise.allSettled([this.notifications.close(), this.maintenance.close()]);
+    await Promise.allSettled([this.notifications.close(), this.work.close(), this.maintenance.close()]);
   }
 }

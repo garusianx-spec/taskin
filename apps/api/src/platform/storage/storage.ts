@@ -1,5 +1,8 @@
 import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   CopyObjectCommand,
+  CreateMultipartUploadCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -7,6 +10,7 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
   S3Client,
+  UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -21,6 +25,11 @@ export interface PresignedPost {
 export interface StoredObject {
   readonly size: number;
   readonly contentType: string | undefined;
+}
+
+/** RFC 5987 `filename*` encoding: percent-encode everything outside attr-char. */
+export function encodeRfc5987(value: string): string {
+  return encodeURIComponent(value).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 /**
@@ -42,18 +51,28 @@ export class StorageService implements OnModuleDestroy {
       region: env.S3_REGION,
       forcePathStyle: env.S3_FORCE_PATH_STYLE,
       credentials: { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY },
+      // By default the SDK signs a CRC32 of the (empty) body into presigned part URLs, so every
+      // real part fails with BadDigest. Checksums only where an operation requires one.
+      requestChecksumCalculation: 'WHEN_REQUIRED' as const,
+      responseChecksumValidation: 'WHEN_REQUIRED' as const,
     };
     this.internal = new S3Client({ ...common, endpoint: env.S3_ENDPOINT });
     this.signer = new S3Client({ ...common, endpoint: env.S3_PUBLIC_ENDPOINT ?? env.S3_ENDPOINT });
   }
 
-  /** A browser upload with the size and type limits enforced by the store itself. */
-  async presignPost(key: string, options: { maxBytes: number; contentTypePrefix: string; expiresInSeconds: number }): Promise<PresignedPost> {
+  /**
+   * A browser upload with the size and type limits enforced by the store itself: a body outside
+   * `[minBytes, maxBytes]` or with another Content-Type is refused before it is stored.
+   */
+  async presignPost(
+    key: string,
+    options: { maxBytes: number; minBytes?: number; contentTypePrefix: string; expiresInSeconds: number },
+  ): Promise<PresignedPost> {
     const { url, fields } = await createPresignedPost(this.signer, {
       Bucket: this.bucket,
       Key: key,
       Conditions: [
-        ['content-length-range', 1, options.maxBytes],
+        ['content-length-range', options.minBytes ?? 1, options.maxBytes],
         ['starts-with', '$Content-Type', options.contentTypePrefix],
       ],
       Expires: options.expiresInSeconds,
@@ -61,16 +80,50 @@ export class StorageService implements OnModuleDestroy {
     return { url, fields };
   }
 
-  async presignGet(key: string, expiresInSeconds: number, downloadName?: string): Promise<string> {
+  /**
+   * A short-lived download link. The file always downloads (`attachment`), with its name in
+   * RFC 5987 form so Persian names survive, and with the sniffed type.
+   */
+  async presignGet(key: string, expiresInSeconds: number, downloadName?: string, contentType?: string): Promise<string> {
     return getSignedUrl(
       this.signer,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        ResponseContentDisposition: downloadName ? `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}` : undefined,
+        ResponseContentDisposition: downloadName ? `attachment; filename*=UTF-8''${encodeRfc5987(downloadName)}` : undefined,
+        ResponseContentType: contentType,
       }),
       { expiresIn: expiresInSeconds },
     );
+  }
+
+  /* ---------------------------------------------------------------- multipart (files over 16 MB) */
+
+  async createMultipart(key: string, contentType: string): Promise<string> {
+    const created = await this.internal.send(new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }));
+    if (!created.UploadId) throw new Error('the store returned no multipart upload id');
+    return created.UploadId;
+  }
+
+  async presignPart(key: string, uploadId: string, partNumber: number, expiresInSeconds: number): Promise<string> {
+    return getSignedUrl(this.signer, new UploadPartCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId, PartNumber: partNumber }), {
+      expiresIn: expiresInSeconds,
+    });
+  }
+
+  async completeMultipart(key: string, uploadId: string, parts: readonly { partNumber: number; etag: string }[]): Promise<void> {
+    await this.internal.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: [...parts].sort((a, b) => a.partNumber - b.partNumber).map((part) => ({ PartNumber: part.partNumber, ETag: part.etag })) },
+      }),
+    );
+  }
+
+  async abortMultipart(key: string, uploadId: string): Promise<void> {
+    await this.internal.send(new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }));
   }
 
   /** Size and type of an object, or `null` when it does not exist. */
