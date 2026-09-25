@@ -9,3 +9,4 @@ export * from './tenancy.js';
 export * from './platform.js';
 export * from './work.js';
 export * from './content.js';
+export * from './chat.js';

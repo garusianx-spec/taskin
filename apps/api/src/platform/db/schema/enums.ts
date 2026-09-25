@@ -72,3 +72,18 @@ export const activityKind = pgEnum('activity_kind', [
   'file-shared',
   'member-joined',
 ]);
+
+/* ---------------------------------------------------------------- M3: chat */
+
+export const conversationKind = pgEnum('conversation_kind', ['direct', 'group', 'channel']);
+
+export const conversationRole = pgEnum('conversation_role', ['owner', 'admin', 'member']);
+
+export const postPolicy = pgEnum('post_policy', ['everyone', 'admins']);
+
+/** `project_synced` channels follow their project's members (the M4 project↔channel link). */
+export const membershipMode = pgEnum('membership_mode', ['manual', 'project_synced']);
+
+export const notificationLevel = pgEnum('notification_level', ['all', 'mentions', 'none']);
+
+export const messageKind = pgEnum('message_kind', ['text', 'voice', 'file', 'system']);
