@@ -10,21 +10,43 @@ a fully tokenised Untitled UI design system.
 
 ## Running it
 
+Node.js 22.12 or newer. Every command runs from the repository root:
+
 ```bash
 npm install
-npm run dev        # http://localhost:3000
-npm run build      # production build
-npm run typecheck  # tsc --noEmit (strict, noUncheckedIndexedAccess)
-npm run lint       # eslint (next/core-web-vitals + next/typescript)
+npm run dev             # builds the shared packages, then http://localhost:3000
+npm run build           # packages + production build of apps/web
+npm run typecheck       # every workspace (strict, noUncheckedIndexedAccess)
+npm run lint            # Next rules for apps/web, typescript-eslint for packages
+npm test                # unit tests for packages/jalali and packages/text
 npm run check:contrast  # WCAG AA audit of every palette × mode (see Theme engine)
+npm run build && npm run test:e2e   # Playwright suites against the production build
 ```
+
+The repository is an npm-workspaces monorepo:
+
+| Path | Contents |
+| --- | --- |
+| `apps/web` | The Next.js app |
+| `packages/contracts` | Domain types, shared with the upcoming API |
+| `packages/jalali` | Jalali calendar engine and Persian date formatting |
+| `packages/text` | Persian text helpers: digits, Iranian mobile numbers, monograms, note Markdown and checklists |
+| `docs/rfc` | Architecture decisions; the backend design is [RFC 0001](docs/rfc/0001-backend-architecture.md) |
+
+Packages compile to `dist/`. While `npm run dev` is running, run `npm run build:packages -- --watch`
+in a second terminal to pick up package edits.
+
+`npm run test:e2e` starts `next start` on port 3100 (`E2E_PORT`), or uses `BASE_URL` if you
+already run a server, and takes suite names to run a subset (`npm run test:e2e -- kanban theme`).
+It launches Chromium from `CHROMIUM_PATH` when set, otherwise from
+`npx playwright-core install chromium`. Screenshots land in `apps/web/e2e/out`.
 
 ---
 
 ## Typography
 
 `IRANYekanX` is self-hosted from `public/fonts` as WOFF2. **Two masters ship in this
-repository** (Medium and ExtraBold), and `src/styles/fonts.css` declares each `@font-face`
+repository** (Medium and ExtraBold), and `apps/web/src/styles/fonts.css` declares each `@font-face`
 with a *weight range* so every step of the type scale resolves to the nearest available
 master rather than being synthesised by the browser:
 
@@ -67,7 +89,7 @@ with `direction: ltr; unicode-bidi: isolate`.
 
 ## Theme engine
 
-Three layers, all in `src/styles/tokens.css`:
+Three layers, all in `apps/web/src/styles/tokens.css`:
 
 1. **Primitive ramps** — raw `R G B` channel triplets, so Tailwind's `<alpha-value>` slot
    works (`bg-surface/80`, `text-fg-primary/60`).
@@ -114,7 +136,7 @@ foreground steps lift to the 300/400 range so they clear WCAG AA on charcoal.
 
 ### No flash of the wrong palette
 
-`THEME_BOOTSTRAP_SCRIPT` (in `src/lib/theme.ts`) runs synchronously in `<head>` before first
+`THEME_BOOTSTRAP_SCRIPT` (in `apps/web/src/lib/theme.ts`) runs synchronously in `<head>` before first
 paint and writes `data-theme` / `data-accent` from `localStorage` or the OS preference.
 `ThemeProvider` then adopts exactly what the script applied, so React hydrates against the
 attributes it would have produced itself. The theme also syncs across open tabs via the
@@ -154,10 +176,10 @@ Direction-aware details that are easy to get wrong and are handled here:
 
 ## Jalali calendar
 
-`src/lib/jalali.ts` implements the Solar Hijri arithmetic conversion (the 33-year
+`packages/jalali` implements the Solar Hijri arithmetic conversion (the 33-year
 leap-cycle algorithm) with no runtime dependency on `Intl`, so output is byte-identical on
-every platform and ICU build. It was verified day-by-day against
-`Intl.DateTimeFormat('en-u-ca-persian')` across 1990–2035 (16,436 days): **zero mismatches**,
+every platform and ICU build. `npm test` verifies it day by day against
+`Intl.DateTimeFormat('en-u-ca-persian')` across 1990–2035 (16,801 days): **zero mismatches**,
 and every date round-trips back to the same Gregorian day.
 
 It provides month grids (Saturday-first), leap-year and month-length calculation, relative
@@ -177,7 +199,7 @@ load. `<RelativeTime>` wraps this in a semantic `<time>` element.
 ## Architecture
 
 ```
-src/
+apps/web/src/
 ├── app/                    # App Router routes (one per module) + root layout
 ├── components/
 │   ├── ui/                 # Headless-ish primitives: Button, Switch, Modal, Drawer, …
@@ -196,11 +218,15 @@ src/
 │   └── theme/              # ThemeProvider, ThemePicker
 ├── data/                   # Typed reference data + seed workspace fixture
 ├── hooks/                  # focus trap, scroll lock, roving focus, media query, clock
-├── lib/                    # jalali, formatting, contact parsing, link metadata, note blocks, theme
+├── lib/                    # formatting, link metadata, downloads, tag tones, theme bootstrap
 ├── store/                  # Pure reducer + selectors + container provider
-├── styles/                 # fonts.css, tokens.css
-└── types/                  # The whole domain model
+└── styles/                 # fonts.css, tokens.css
 ```
+
+The domain model lives in `packages/contracts`, the Jalali engine in `packages/jalali`, and the
+Persian text helpers (digits, mobile numbers, monograms, note Markdown and checklists) in
+`packages/text`; the app imports them as `@taskin/contracts`, `@taskin/jalali` and
+`@taskin/text`.
 
 ### Separation of concerns
 
@@ -358,7 +384,7 @@ the message text and any attachment. Verified: zero horizontal overflow on every
 
 ## What is mocked
 
-This is a complete front end against an in-memory fixture (`src/data/workspace.ts`); there is
+This is a complete front end against an in-memory fixture (`apps/web/src/data/workspace.ts`); there is
 no backend. Two consequences worth stating plainly:
 
 - **Voice messages have no audio files.** `VoicePlayer` implements both transports: when a
