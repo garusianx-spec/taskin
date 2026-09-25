@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DepartmentView, UploadTicket, WorkspaceView } from '@taskin/contracts';
 import { WorkspacesService } from '../../src/modules/workspaces/workspaces.service.js';
 import { addMember, bearer, createTestApp, idempotencyKey, ownerWithWorkspace, randomPhone, type Session, signIn, stepUp, type TestApp } from './harness.js';
+import { createProject, createTask } from './work-helpers.js';
 
 const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
@@ -101,13 +102,44 @@ describe('workspaces', () => {
     const ticket = (await t.http().post('/api/v1/uploads/workspace-icon').set(bearer(owner))).body as UploadTicket;
     await upload(ticket, PNG_1x1, 'image/png');
     await t.http().patch(`/api/v1/workspaces/${workspace.id}`).set(bearer(owner)).send({ iconUploadKey: ticket.key });
+    // Work in every M2 table the purge must cascade through.
+    const ws = `/api/v1/workspaces/${workspace.id}`;
+    const project = await createProject(t, owner, workspace.id);
+    const label = (await t.http().post(`${ws}/labels`).set(bearer(owner)).send({ name: 'برچسب' })).body;
+    const task = await createTask(t, owner, workspace.id, { projectId: project.id, assigneeIds: [owner.userId], labelIds: [label.id], subtasks: ['گام'] });
+    await t.http().post(`${ws}/tasks/${task.id}/comments`).set(bearer(owner)).send({ body: 'نظر' });
+    await t.http().put(`${ws}/tasks/${task.id}/star`).set(bearer(owner));
+    const note = await t.http().post(`${ws}/notes`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ title: 'یادداشت', body: '- [ ] کار' });
+    await t.http().post(`${ws}/notes/${note.body.id}/task`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ projectId: project.id });
+    await t.http().post(`${ws}/calendar/events`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ kind: 'meeting', title: 'جلسه', date: '2030-01-01', startTime: '09:00', attendeeIds: [owner.userId] });
+    await t.flushNotifications();
     const stepped = await stepUp(t, owner);
     await t.http().delete(`/api/v1/workspaces/${workspace.id}`).set(bearer(stepped)).send({ confirmName: 'پاکسازی' });
     const service = t.app.get(WorkspacesService);
     expect(await service.purgeDue()).toBe(0);
     await t.admin.query(`update workspaces set purge_after = now() - interval '1 minute' where id = $1`, [workspace.id]);
     expect(await service.purgeDue()).toBe(1);
-    for (const table of ['workspaces', 'workspace_members', 'roles', 'role_permissions', 'departments']) {
+    for (const table of [
+      'workspaces',
+      'workspace_members',
+      'roles',
+      'role_permissions',
+      'departments',
+      'workflows',
+      'board_columns',
+      'projects',
+      'project_members',
+      'tasks',
+      'task_assignees',
+      'task_labels',
+      'subtasks',
+      'task_comments',
+      'labels',
+      'notes',
+      'note_categories',
+      'calendar_events',
+      'calendar_event_attendees',
+    ]) {
       const column = table === 'workspaces' ? 'id' : 'workspace_id';
       const { rows } = await t.admin.query(`select 1 from ${table} where ${column} = $1`, [workspace.id]);
       expect({ table, rows: rows.length }).toEqual({ table, rows: 0 });

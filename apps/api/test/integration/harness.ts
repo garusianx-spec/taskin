@@ -10,7 +10,7 @@ import { createApp } from '../../src/bootstrap.js';
 import { type Env, envSchema } from '../../src/config/env.js';
 import { MailService } from '../../src/platform/mail/mail.js';
 import { OutboxRelay } from '../../src/platform/outbox/outbox-relay.js';
-import { type NotificationJobData, type NotificationJobs, Queues } from '../../src/platform/queue/queues.js';
+import { type NotificationJobData, type NotificationJobs, Queues, type WorkJobData, type WorkJobs } from '../../src/platform/queue/queues.js';
 import { type ConsoleSmsProvider, SmsService } from '../../src/platform/sms/sms.js';
 import { QueueWorkers } from '../../src/worker/workers.js';
 import { adminUrl, dbUrl, REDIS_URL, S3 } from './infra.js';
@@ -46,8 +46,11 @@ export interface TestApp {
   readonly sms: ConsoleSmsProvider;
   readonly mail: NonNullable<MailService['memory']>;
   http(): supertest.Agent;
-  /** Publishes the outbox and runs the notification jobs it produced, as the worker would. */
-  flushNotifications(): Promise<number>;
+  /**
+   * Publishes the outbox and runs the jobs it produced (SMS, email, fan-out, scans), as the worker
+   * would, oldest first. Delayed jobs (reminders) run only with `{ delayed: true }`.
+   */
+  flushNotifications(options?: { delayed?: boolean }): Promise<number>;
   close(): Promise<void>;
 }
 
@@ -138,12 +141,17 @@ export async function createTestApp(overrides: Record<string, string> = {}): Pro
     sms,
     mail,
     http: () => supertest.agent(baseUrl).set('X-Forwarded-For', '203.0.113.10'),
-    async flushNotifications() {
+    async flushNotifications(options = {}) {
       const published = await app.get(OutboxRelay).drainOnce();
-      const queue = app.get(Queues).notifications;
+      const queues = app.get(Queues);
       const workers = app.get(QueueWorkers);
-      for (const job of await queue.getJobs(['waiting', 'prioritized', 'delayed'])) {
+      for (const job of await queues.notifications.getJobs(['waiting', 'prioritized', 'delayed'], 0, -1, true)) {
         await workers.runNotification(job.name as keyof NotificationJobs, job.data as NotificationJobData);
+        await job.remove();
+      }
+      const states = options.delayed ? (['waiting', 'prioritized', 'delayed'] as const) : (['waiting', 'prioritized'] as const);
+      for (const job of await queues.work.getJobs([...states], 0, -1, true)) {
+        await workers.runWork(job.name as keyof WorkJobs, job.data as WorkJobData);
         await job.remove();
       }
       return published;

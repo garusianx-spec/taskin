@@ -2,9 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import type { Test } from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AuthSession, OtpVerifyResult, RoleView, UploadTicket } from '@taskin/contracts';
+import type { AuthSession, OtpVerifyResult, RoleView, TaskDetail, UploadTicket, UploadView, WorkflowView } from '@taskin/contracts';
 import { OPENAPI_FILE } from '../../src/openapi.js';
 import {
+  addMember,
   bearer,
   createTestApp,
   idempotencyKey,
@@ -22,6 +23,20 @@ import {
   type TestApp,
   withAdminPassword,
 } from './harness.js';
+import { createProject, createTask, usePlan } from './work-helpers.js';
+
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n');
+
+/** Sends `bytes` to the store with a presigned POST, as the browser would. */
+async function postToStore(plan: UploadView['plan'], bytes: Buffer, contentType: string): Promise<void> {
+  if (plan.kind !== 'post') throw new Error('expected a POST plan');
+  const form = new FormData();
+  for (const [name, value] of Object.entries(plan.fields)) form.append(name, value);
+  form.append('Content-Type', contentType);
+  form.append('file', new Blob([bytes], { type: contentType }), 'upload');
+  const response = await fetch(plan.url, { method: 'POST', body: form });
+  if (response.status >= 300) throw new Error(`store refused the upload: ${response.status}`);
+}
 
 interface Call {
   readonly template: string;
@@ -127,6 +142,78 @@ describe('M1 checklist: audit trail and correlation', () => {
     );
     await traced('post', '/api/v1/workspaces/{workspaceId}/roles/reset-defaults', `${ws}/roles/reset-defaults`, (r) => r.set(bearer(user)));
 
+    // Projects, the board and tasks (M2).
+    const idem = (r: Test) => r.set(bearer(user)).set('Idempotency-Key', idempotencyKey());
+    const project = (await traced('post', '/api/v1/workspaces/{workspaceId}/projects', `${ws}/projects`, (r) => idem(r).send({ key: 'TRC', name: 'ردیابی' }))).body;
+    const pj = `${ws}/projects/${project.id}`;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/projects/{projectId}', pj, (r) => r.set(bearer(user)).send({ description: 'شرح پروژه' }));
+    await traced('put', '/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}', `${pj}/members/${joiner.userId}`, (r) =>
+      r.set(bearer(user)).send({ role: 'contributor' }),
+    );
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}', `${pj}/members/${joiner.userId}`, (r) => r.set(bearer(user)));
+    await traced('put', '/api/v1/workspaces/{workspaceId}/projects/{projectId}/star', `${pj}/star`, (r) => r.set(bearer(user)));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/projects/{projectId}/star', `${pj}/star`, (r) => r.set(bearer(user)));
+    const workflow = (await traced('post', '/api/v1/workspaces/{workspaceId}/workflow/columns', `${ws}/workflow/columns`, (r) => idem(r).send({ title: 'موقت' })))
+      .body as WorkflowView;
+    const column = workflow.columns.find((entry) => entry.title === 'موقت');
+    const col = `${ws}/workflow/columns/${column?.id}`;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/workflow/columns/{columnId}', col, (r) => r.set(bearer(user)).send({ tone: 'red' }));
+    const label = (await traced('post', '/api/v1/workspaces/{workspaceId}/labels', `${ws}/labels`, (r) => r.set(bearer(user)).send({ name: 'برچسب' }))).body;
+
+    // Files: one completed upload, one abandoned.
+    const planned = (
+      await traced('post', '/api/v1/workspaces/{workspaceId}/files/uploads', `${ws}/files/uploads`, (r) =>
+        idem(r).send({ fileName: 'سند.pdf', size: PDF.length, contentType: 'application/pdf' }),
+      )
+    ).body as UploadView;
+    await postToStore(planned.plan, PDF, 'application/pdf');
+    await traced('post', '/api/v1/workspaces/{workspaceId}/files/uploads/{attachmentId}/complete', `${ws}/files/uploads/${planned.attachment.id}/complete`, (r) =>
+      r.set(bearer(user)).send({}),
+    );
+    const abandoned = (await idem(t.http().post(`${ws}/files/uploads`)).send({ fileName: 'رها.pdf', size: 10, contentType: 'application/pdf' })).body as UploadView;
+    await traced('post', '/api/v1/workspaces/{workspaceId}/files/uploads/{attachmentId}/abort', `${ws}/files/uploads/${abandoned.attachment.id}/abort`, (r) => r.set(bearer(user)));
+    await t.flushNotifications();
+
+    const task = (await traced('post', '/api/v1/workspaces/{workspaceId}/tasks', `${ws}/tasks`, (r) => idem(r).send({ projectId: project.id, title: 'ردیابی', labelIds: [label.id] })))
+      .body as TaskDetail;
+    const tk = `${ws}/tasks/${task.id}`;
+    const patched = (await traced('patch', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}', tk, (r) => r.set(bearer(user)).set('If-Match', `"${task.version}"`).send({ priority: 'high' })))
+      .body as TaskDetail;
+    await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/move', `${tk}/move`, (r) =>
+      r.set(bearer(user)).send({ columnId: column?.id, expectedVersion: patched.version }),
+    );
+    await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/complete', `${tk}/complete`, (r) => r.set(bearer(user)).send({ completed: true }));
+    await traced('put', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/star', `${tk}/star`, (r) => r.set(bearer(user)));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/star', `${tk}/star`, (r) => r.set(bearer(user)));
+    const subtask = (await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks', `${tk}/subtasks`, (r) => r.set(bearer(user)).send({ title: 'گام' }))).body;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks/{subtaskId}', `${tk}/subtasks/${subtask.id}`, (r) => r.set(bearer(user)).send({ done: true }));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks/{subtaskId}', `${tk}/subtasks/${subtask.id}`, (r) => r.set(bearer(user)));
+    const comment = (await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/comments', `${tk}/comments`, (r) => r.set(bearer(user)).send({ body: 'نظر' }))).body;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/comments/{commentId}', `${tk}/comments/${comment.id}`, (r) => r.set(bearer(user)).send({ body: 'نظر تازه' }));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/comments/{commentId}', `${tk}/comments/${comment.id}`, (r) => r.set(bearer(user)));
+    await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/attachments', `${tk}/attachments`, (r) => r.set(bearer(user)).send({ attachmentId: planned.attachment.id }));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/attachments/{attachmentId}', `${tk}/attachments/${planned.attachment.id}`, (r) => r.set(bearer(user)));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/workflow/columns/{columnId}', col, (r) => r.set(bearer(user)).send({}));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}', tk, (r) => r.set(bearer(user)));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/labels/{labelId}', `${ws}/labels/${label.id}`, (r) => r.set(bearer(user)));
+
+    // Notes and the calendar.
+    const category = (await traced('post', '/api/v1/workspaces/{workspaceId}/note-categories', `${ws}/note-categories`, (r) => r.set(bearer(user)).send({ label: 'دفتر' }))).body;
+    const cat = `${ws}/note-categories/${category.id}`;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/note-categories/{categoryId}', cat, (r) => r.set(bearer(user)).send({ position: 5 }));
+    const note = (await traced('post', '/api/v1/workspaces/{workspaceId}/notes', `${ws}/notes`, (r) => idem(r).send({ categoryId: category.id, title: 'یادداشت', body: '- [ ] کار' }))).body;
+    const nt = `${ws}/notes/${note.id}`;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/notes/{noteId}', nt, (r) => r.set(bearer(user)).set('If-Match', `"${note.version}"`).send({ pinned: true }));
+    await traced('post', '/api/v1/workspaces/{workspaceId}/notes/{noteId}/task', `${nt}/task`, (r) => idem(r).send({ projectId: project.id }));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/notes/{noteId}', nt, (r) => r.set(bearer(user)));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/note-categories/{categoryId}', cat, (r) => r.set(bearer(user)));
+    const event = (await traced('post', '/api/v1/workspaces/{workspaceId}/calendar/events', `${ws}/calendar/events`, (r) => idem(r).send({ kind: 'meeting', title: 'جلسه', date: '2030-01-01', startTime: '09:00' }))).body;
+    const ev = `${ws}/calendar/events/${event.id}`;
+    await traced('patch', '/api/v1/workspaces/{workspaceId}/calendar/events/{eventId}', ev, (r) => r.set(bearer(user)).set('If-Match', `"${event.version}"`).send({ title: 'جلسه ماهانه' }));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/calendar/events/{eventId}', ev, (r) => r.set(bearer(user)));
+    await traced('post', '/api/v1/me/notifications/read', '/api/v1/me/notifications/read', (r) => r.set(bearer(user)).send({ all: true }));
+    await traced('delete', '/api/v1/workspaces/{workspaceId}/projects/{projectId}', pj, (r) => r.set(bearer(user)));
+
     // Ownership, removal, deletion, and finally signing out.
     await traced('post', '/api/v1/workspaces/{workspaceId}/transfer-ownership', `${ws}/transfer-ownership`, (r) => r.set(bearer(user)).send({ userId: joiner.userId }));
     const newOwner = { ...joiner };
@@ -222,6 +309,51 @@ describe('M1 checklist: query budgets (no N+1)', () => {
     await budget(`/api/v1/workspaces/${workspace.id}/roles`, 3);
     await budget(`/api/v1/workspaces/${workspace.id}/departments`, 2);
     await budget(`/api/v1/workspaces/${workspace.id}/invitations`, 2);
+  });
+
+  it('holds the M2 read models to their budgets: board ≤ 3, task ≤ 2, calendar month ≤ 2, my tasks ≤ 2', async () => {
+    const { owner, workspace } = await ownerWithWorkspace(t, 'بودجه');
+    await usePlan(t, workspace.id, 'team');
+    const member = await addMember(t, owner, workspace.id, 'member');
+    const project = await createProject(t, owner, workspace.id);
+    const ws = `/api/v1/workspaces/${workspace.id}`;
+    const label = (await t.http().post(`${ws}/labels`).set(bearer(owner)).send({ name: 'برچسب' })).body;
+    let last: TaskDetail | undefined;
+    // Enough cards, each with people, labels, subtasks and comments, to expose any per-row query.
+    for (let index = 0; index < 12; index += 1) {
+      last = await createTask(t, owner, workspace.id, {
+        projectId: project.id,
+        title: `کارت ${index}`,
+        assigneeIds: [member.userId, owner.userId],
+        labelIds: [label.id],
+        subtasks: ['یک', 'دو', 'سه'],
+        startDate: '2026-11-01',
+        dueDate: `2026-11-${String(10 + index).padStart(2, '0')}`,
+      });
+      await t.http().post(`${ws}/tasks/${last.id}/comments`).set(bearer(owner)).send({ body: 'نظر' });
+    }
+    for (let index = 0; index < 4; index += 1) {
+      await t
+        .http()
+        .post(`${ws}/calendar/events`)
+        .set(bearer(owner))
+        .set('Idempotency-Key', idempotencyKey())
+        .send({ kind: 'meeting', title: `جلسه ${index}`, date: `2026-11-0${index + 2}`, startTime: '10:00', projectId: project.id, attendeeIds: [member.userId] });
+    }
+    const budget = async (as: Session, path: string, max: number) => {
+      await t.http().get(path).set(bearer(as)); // warm the permission caches
+      const response = await t.http().get(path).set(bearer(as));
+      expect(response.status, path).toBe(200);
+      expect({ path, statements: sqlCount(response) <= max }).toEqual({ path, statements: true });
+    };
+    for (const as of [owner, member]) {
+      await budget(as, `${ws}/board?projectId=${project.id}`, 3);
+      await budget(as, `${ws}/tasks/${last?.id}`, 2);
+      await budget(as, `${ws}/calendar?from=2026-11-01&to=2026-11-30`, 2);
+      await budget(as, `${ws}/tasks?smart=my-tasks`, 2);
+      await budget(as, `${ws}/tasks?smart=due-soon`, 2);
+      await budget(as, `${ws}/projects`, 2);
+    }
   });
 
   it('reports ready when every dependency answers', async () => {

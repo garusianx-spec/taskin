@@ -1,12 +1,41 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestApp, invite, ownerWithWorkspace, type TestApp } from './harness.js';
+import { CalendarService } from '../../src/modules/content/calendar.service.js';
+import { bearer, createTestApp, idempotencyKey, invite, ownerWithWorkspace, type Session, type TestApp } from './harness.js';
+import { createProject, createTask, expectStatus, wsPath } from './work-helpers.js';
 
 /** Platform tables that carry a workspace id but are read across tenants by design. */
 const CROSS_TENANT_BY_DESIGN = new Set([
   // The outbox relay publishes every tenant's events in id order; the API only ever inserts.
   'outbox_events',
 ]);
+
+/** Private to their owner as well as their tenant: reads need the user setting too. */
+const OWNER_SCOPED = new Set(['notes', 'note_categories']);
+
+/** Gives a workspace at least one row in every tenant table, through the API where it can. */
+async function populate(t: TestApp, owner: Session, workspaceId: string): Promise<void> {
+  const base = wsPath(workspaceId);
+  const project = await createProject(t, owner, workspaceId);
+  const label = await t.http().post(`${base}/labels`).set(bearer(owner)).send({ name: `برچسب ${workspaceId.slice(0, 4)}` });
+  const task = await createTask(t, owner, workspaceId, { projectId: project.id, assigneeIds: [owner.userId], labelIds: [label.body.id], subtasks: ['گام'] });
+  expectStatus(await t.http().put(`${base}/tasks/${task.id}/star`).set(bearer(owner)), 204);
+  expectStatus(await t.http().put(`${base}/projects/${project.id}/star`).set(bearer(owner)), 204);
+  expectStatus(await t.http().post(`${base}/tasks/${task.id}/comments`).set(bearer(owner)).send({ body: 'نظر' }), 201);
+  // A ready file of the owner's (the upload itself is covered by the files suite).
+  const { rows } = await t.admin.query<{ id: string }>(
+    `insert into attachments (workspace_id, uploader_id, bucket, object_key, file_name, mime_type, kind, size_bytes, status)
+     values ($1::uuid, $2, 'taskin-files', 'ws/' || $1::text || '/att/' || gen_random_uuid(), 'a.pdf', 'application/pdf', 'document', 10, 'ready') returning id`,
+    [workspaceId, owner.userId],
+  );
+  expectStatus(await t.http().post(`${base}/tasks/${task.id}/attachments`).set(bearer(owner)).send({ attachmentId: rows[0]?.id }), 204);
+  const event = await t.http().post(`${base}/calendar/events`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ kind: 'meeting', title: 'جلسه', date: '2030-01-01', startTime: '09:00', attendeeIds: [owner.userId] });
+  expectStatus(event, 201);
+  expectStatus(await t.http().post(`${base}/notes`).set(bearer(owner)).set('Idempotency-Key', idempotencyKey()).send({ title: 'یادداشت' }), 201);
+  // Activity (file-shared) and a notification (the reminder) come from the worker.
+  await t.flushNotifications();
+  await t.app.get(CalendarService).remind(workspaceId, event.body.id, event.body.version);
+}
 
 async function asApp<T>(pool: pg.Pool, settings: { workspaceId?: string; userId?: string }, work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
@@ -29,7 +58,7 @@ async function asApp<T>(pool: pg.Pool, settings: { workspaceId?: string; userId?
 
 describe('M1 checklist: row-level security isolates tenants', () => {
   let t: TestApp;
-  let a: { workspaceId: string };
+  let a: { workspaceId: string; ownerId: string };
   let b: { workspaceId: string; roleId: string };
   let tenantTables: string[];
 
@@ -40,7 +69,9 @@ describe('M1 checklist: row-level security isolates tenants', () => {
     // Give both tenants rows in every tenant table: invitations and audit rows included.
     await invite(t, first.owner, first.workspace.id, ['mina@alef.test']);
     await invite(t, second.owner, second.workspace.id, ['sara@beh.test']);
-    a = { workspaceId: first.workspace.id };
+    await populate(t, first.owner, first.workspace.id);
+    await populate(t, second.owner, second.workspace.id);
+    a = { workspaceId: first.workspace.id, ownerId: first.owner.userId };
     const { rows } = await t.admin.query<{ id: string }>(`select id from roles where workspace_id = $1 and key = 'member'`, [second.workspace.id]);
     b = { workspaceId: second.workspace.id, roleId: rows[0]?.id ?? '' };
     const tables = await t.admin.query<{ table_name: string }>(
@@ -67,12 +98,16 @@ describe('M1 checklist: row-level security isolates tenants', () => {
     expect(tenantTables).toEqual(
       expect.arrayContaining(['audit_logs', 'departments', 'invitations', 'role_permissions', 'roles', 'workspace_members', 'workspaces']),
     );
+    expect(tenantTables).toEqual(
+      expect.arrayContaining(['projects', 'tasks', 'board_columns', 'attachments', 'notes', 'calendar_events', 'notifications', 'activity_events']),
+    );
   });
 
   it('shows workspace A none of workspace B’s rows, in any tenant table', async () => {
     for (const table of tenantTables) {
       const column = table === 'workspaces' ? 'id' : 'workspace_id';
-      const counts = await asApp(t.appPool, { workspaceId: a.workspaceId }, async (client) => {
+      const settings = OWNER_SCOPED.has(table) ? { workspaceId: a.workspaceId, userId: a.ownerId } : { workspaceId: a.workspaceId };
+      const counts = await asApp(t.appPool, settings, async (client) => {
         const own = await client.query<{ count: string }>(`select count(*) from ${table} where ${column} = $1`, [a.workspaceId]);
         const other = await client.query<{ count: string }>(`select count(*) from ${table} where ${column} = $1`, [b.workspaceId]);
         const all = await client.query<{ count: string }>(`select count(*) from ${table} where ${column} is distinct from $1`, [a.workspaceId]);
@@ -122,5 +157,29 @@ describe('M1 checklist: row-level security isolates tenants', () => {
       code: '42501',
     });
     await expect(asApp(t.appPool, {}, (client) => client.query(`delete from audit_logs_default`))).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('keeps the search lookups (which run as the table owner) inside the caller’s workspace and notes', async () => {
+    const ids = (client: pg.PoolClient, fn: 'search_task_ids' | 'search_note_ids') =>
+      client.query<{ id: string }>(`select id from app.${fn}('%') as id`).then((result) => result.rows.map((row) => row.id).sort());
+    const tasksOf = async (workspaceId: string) =>
+      (await t.admin.query<{ id: string }>(`select id from tasks where workspace_id = $1 and deleted_at is null order by id`, [workspaceId])).rows.map((row) => row.id);
+    const notesOf = async (workspaceId: string, ownerId: string) =>
+      (await t.admin.query<{ id: string }>(`select id from notes where workspace_id = $1 and owner_id = $2 order by id`, [workspaceId, ownerId])).rows.map((row) => row.id);
+
+    const own = await asApp(t.appPool, { workspaceId: a.workspaceId, userId: a.ownerId }, async (client) => ({
+      tasks: await ids(client, 'search_task_ids'),
+      notes: await ids(client, 'search_note_ids'),
+    }));
+    expect(own.tasks).toEqual(await tasksOf(a.workspaceId));
+    expect(own.notes).toEqual(await notesOf(a.workspaceId, a.ownerId));
+    expect(own.tasks.length * own.notes.length).toBeGreaterThan(0);
+
+    // Someone else in the same workspace sees its tasks but none of the owner's notes.
+    const stranger = '00000000-0000-4000-8000-000000000000';
+    expect(await asApp(t.appPool, { workspaceId: a.workspaceId, userId: stranger }, (client) => ids(client, 'search_note_ids'))).toEqual([]);
+    // Without the settings, nothing (fails closed like the policies).
+    expect(await asApp(t.appPool, {}, (client) => ids(client, 'search_task_ids'))).toEqual([]);
+    expect(await asApp(t.appPool, { userId: a.ownerId }, (client) => ids(client, 'search_note_ids'))).toEqual([]);
   });
 });
