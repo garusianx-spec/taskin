@@ -6,8 +6,6 @@ import type {
   DepartmentId,
   ModuleDescriptor,
   PermissionActionDescriptor,
-  PermissionActionId,
-  PermissionMatrix,
   PermissionModuleDescriptor,
   RoleDescriptor,
   RoleId,
@@ -19,6 +17,7 @@ import type {
   TaskPriority,
   TaskStatus,
 } from '@taskin/contracts';
+import { DEFAULT_PERMISSION_MATRIX } from '@taskin/contracts';
 
 /* ------------------------------ Navigation ------------------------------ */
 
@@ -252,48 +251,8 @@ export const PERMISSION_ACTIONS: readonly PermissionActionDescriptor[] = [
   { id: 'assign', name: 'ارجاع و تغییر وضعیت', shortName: 'ارجاع' },
 ];
 
-const ALL_ACTIONS: readonly PermissionActionId[] = PERMISSION_ACTIONS.map((action) => action.id);
-
-const grant = (...actions: readonly PermissionActionId[]) =>
-  Object.fromEntries(ALL_ACTIONS.map((action) => [action, actions.includes(action)])) as Readonly<
-    Record<PermissionActionId, boolean>
-  >;
-
-const ALL = grant(...ALL_ACTIONS);
-const NONE = grant();
-
-/** Shipping defaults. The RBAC screen edits a working copy of this and can reset back to it. */
-export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
-  owner: { messages: ALL, boards: ALL, files: ALL, reports: ALL, members: ALL },
-  admin: {
-    messages: ALL,
-    boards: ALL,
-    files: ALL,
-    reports: ALL,
-    members: grant('view', 'create', 'edit', 'assign'),
-  },
-  manager: {
-    messages: grant('view', 'create', 'edit', 'assign'),
-    boards: ALL,
-    files: grant('view', 'create', 'edit', 'delete'),
-    reports: grant('view', 'create', 'edit'),
-    members: grant('view', 'assign'),
-  },
-  member: {
-    messages: grant('view', 'create', 'edit'),
-    boards: grant('view', 'create', 'edit', 'assign'),
-    files: grant('view', 'create'),
-    reports: grant('view', 'create'),
-    members: grant('view'),
-  },
-  guest: {
-    messages: grant('view'),
-    boards: grant('view'),
-    files: grant('view'),
-    reports: NONE,
-    members: NONE,
-  },
-};
+/** Shipping defaults, shared with the API's role seeds. The RBAC screen edits a working copy. */
+export { DEFAULT_PERMISSION_MATRIX };
 
 export const roleLabel = (role: RoleId): string =>
   ROLES.find((entry) => entry.id === role)?.name ?? role;
