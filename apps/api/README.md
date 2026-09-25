@@ -3,9 +3,10 @@
 The Taskin backend: a NestJS 12 modular monolith (ESM, strict TypeScript) on PostgreSQL 18,
 Redis 7.4 and S3-compatible object storage. It implements RFC 0001
 ([docs/rfc/0001-backend-architecture.md](../../docs/rfc/0001-backend-architecture.md)); this
-package currently covers **milestones M1 and M2**: the platform, authentication, workspaces and
-RBAC, then projects, the Kanban board, tasks, files, notes, the calendar, in-app notifications,
-the activity feed and Jalali reports.
+package currently covers **milestones M1 to M3**: the platform, authentication, workspaces and
+RBAC; projects, the Kanban board, tasks, files, notes, the calendar, in-app notifications, the
+activity feed and Jalali reports; and real-time chat on a Socket.IO gateway that scales out over
+Redis.
 
 ## Running it
 
@@ -33,7 +34,7 @@ One image, chosen by `APP_ROLE` (RFC §1.3):
 | --- | --- |
 | `http` | The REST API: guards, validation, idempotency, rate limits |
 | `worker` | BullMQ consumers (SMS, email, notification and feed fan-out, file scans, calendar reminders), maintenance schedules (audit partitions, workspace purge, file garbage collection, cleanup) and the outbox relay |
-| `ws` | Health endpoints only for now; the Socket.IO gateway arrives with M3 |
+| `ws` | The Socket.IO gateway on `/rt`: handshake authentication, rooms, the chat hot path, typing, presence, resume. Health endpoints only over HTTP |
 | `all` | Everything, for local development |
 
 Controllers are only mounted in the `http` composition, so a worker can never expose a route
@@ -52,6 +53,7 @@ src/
 │   ├── http/          problem+json filter, validation, idempotency, Redis rate-limit storage
 │   ├── outbox/        transactional outbox writer and the single-leader relay
 │   ├── queue/         BullMQ queues on redis-core
+│   ├── realtime/      rooms, the publisher and bus, the rt:events replay streams, outbox → realtime mapping, presence keys
 │   ├── audit/         append-only audit writer (redacts phones, emails, secrets)
 │   ├── sms/ mail/ storage/   ports: Kavenegar/SMS.ir/console, SMTP, S3
 │   └── logging/ health/ crypto/ redis/
@@ -62,9 +64,12 @@ src/
 │   ├── workspaces/    workspaces, members, departments, invitations, icons
 │   ├── work/          projects, project access, the workflow and its columns, tasks, labels,
 │   │                  and the task read models (task-queries.ts)
-│   └── content/       files (uploads, sniffing, GC), notes, calendar, notifications and activity, reports
+│   ├── content/       files (uploads, sniffing, GC), notes, calendar, notifications and activity, reports
+│   ├── chat/          conversations (DMs, groups, channels), messages, reactions, read cursors, shared media
+│   └── realtime/      the gateway, the Redis adapter and handshake, per-event guards, room scope, presence tracker
 ├── worker/            BullMQ processors
 └── cli/               migrate, schema snapshot, OpenAPI, performance seed and measurement
+scripts/               scale-smoke.mjs and chat-load.mjs, run against infra/compose.scale.yml
 db/
 ├── migrations/        drizzle-kit output plus hand-written SQL (functions, RLS, triggers, audit partitions)
 └── schema.snapshot.txt   the migrated catalog, compared in CI
@@ -114,12 +119,48 @@ db/
 - **Correlation.** Every log line, audit row, outbox header and queue job carries the request id
   and W3C trace id.
 
+### Real-time (M3)
+
+- **Connections.** Socket.IO on `/rt`, WebSocket transport only, so no sticky sessions. The
+  handshake verifies the access token (`auth.token`, never the query string), its session and the
+  user's security version before the connection opens. A refusal carries `AUTH_INVALID`,
+  `AUTH_EXPIRED`, `SESSION_REVOKED`, or `SERVICE_UNAVAILABLE` when the check itself could not run
+  (keep the token, retry with backoff). Per event, `WsJwtGuard` checks the expiry in memory
+  (a minute of grace after `exp`, `auth:refresh` in band) and `WsThrottlerGuard` holds each socket
+  to token buckets (`message:send` 20 then 5/s by default).
+- **Rooms.** `user:`, `session:`, `ws:` (the one live workspace), `project:` and `conv:`.
+  `workspace:subscribe` joins the projects and conversations the member can see, in one query.
+  Membership and permission changes reach every node after commit, through the outbox relay and
+  the realtime bus (`rt:bus`): join, leave, re-evaluate, evict, revoke.
+- **Fan-out.** Nodes share the Socket.IO Redis adapter on redis-rt (`RT_ADAPTER=redis`, or
+  `redis-sharded` for a Redis Cluster). REST nodes, the relay and the worker, which hold no sockets,
+  publish on the bus instead.
+- **The hot path is one round trip.** A plain message is one call to `app.send_message`. It
+  sets the tenant for row-level security itself, then in one statement checks that the sender
+  may post, bumps the conversation's `seq` under its row lock, inserts, records mentions and
+  moves the sender's cursors. The ack means stored; the node then broadcasts `message:new` to
+  the room, leaving out the sender's socket. A retry with the same `clientMsgId` returns the
+  stored message. Mentions, replies, files and REST sends run the same function inside a
+  transaction, next to their outbox or audit row.
+- **Receipts** from sockets are written in one batch per node per second (`app.advance_cursors`,
+  which skips rows a send holds rather than waiting) and announced as `read:updated`, coalesced.
+- **Recovery.** Chat messages carry a per-conversation `seq`: `sync:resume` returns what a client
+  missed (at most 200 per conversation, then `gap`). Other events are also appended to
+  `rt:events:{workspaceId}` (a Redis stream, about 20,000 entries or 24 hours) and replayed by id,
+  filtered by the socket's rooms. Older than the stream gives `resync:required`.
+- **Presence** is a set of connections per user in Redis. A node heartbeats every 3 s (10 s TTL);
+  a departure is announced after a 10 s grace, so a quick reconnect never flaps; a sweeper clears
+  a dead node's connections, so its users go offline within about 25 s.
+- **Draining.** On shutdown a node tells its clients `server:draining` with a jittered delay,
+  writes pending receipts and hands presence to the grace period.
+
 ## Tests
 
 | Command | What | Needs |
 | --- | --- | --- |
-| `npm test -w @taskin/api` | Unit tests: the full 5 × 5 × 5 permission matrix, crypto, redaction, error mapping, SMS failover | nothing |
-| `npm run test:int -w @taskin/api` | Integration suites: RLS isolation, auth, RBAC, idempotency, workspaces, invitations, projects and the CASL/SQL conformance check, board ordering and concurrency, tasks, uploads against S3, notes, calendar, notifications and feed, Jalali reports, audit coverage of every mutating route, query budgets | `npm run infra:up` |
+| `npm test -w @taskin/api` | Unit tests: the full 5 × 5 × 5 permission matrix, crypto, redaction, error mapping, SMS failover, socket token buckets and expiry, stream ids, mentions, the outbox → realtime mapping | nothing |
+| `npm run test:int -w @taskin/api` | Integration suites: RLS isolation, auth, RBAC, idempotency, workspaces, invitations, projects and the CASL/SQL conformance check, board ordering and concurrency, tasks, uploads against S3, notes, calendar, notifications and feed, Jalali reports, chat, the gateway, two gateway nodes per adapter (ordering, node crash and resume, presence), audit coverage of every mutating route, query budgets | `npm run infra:up` |
+| `node apps/api/scripts/scale-smoke.mjs` | The scaled topology behind nginx: cross-node delivery, edge routing, relay-driven room changes | the scale stack (below) |
 
 The integration run migrates a template database from zero once; every test file clones it
 (`CREATE DATABASE … TEMPLATE`) and uses its own Redis prefix, so files run in parallel. Override
@@ -162,6 +203,56 @@ transferring and parsing 1,000 rows. Two things keep the lists flat as data grow
   `taskin_app`, the trigram index could therefore narrow only by workspace. These SECURITY DEFINER
   lookups return ids from the caller's own workspace (and, for notes, the caller's own notes),
   and the RLS suite asserts that.
+
+## Scaling out and load
+
+`infra/compose.scale.yml` runs the RFC §2 topology: a REST node, two WebSocket nodes and a worker
+behind nginx on http://localhost:8080 (REST under `/api`, Socket.IO on `/rt`, round-robin over
+both WebSocket nodes, which are also published on 4101 and 4102).
+
+```bash
+docker compose -f infra/docker-compose.yml -f infra/compose.scale.yml --profile scale up -d --build --wait
+node apps/api/scripts/scale-smoke.mjs      # also a CI job
+```
+
+`scripts/chat-load.mjs` is the M3 load run: it seeds workspaces of 100 members, each in one group
+of 10; connects the sockets across the WebSocket nodes; sends at a steady rate from random members
+(10% of recipients answer with a read receipt); and runs REST traffic through nginx at the same
+time (board, task list, task detail and task creation), first alone as a baseline. It reports
+p50/p95/p99 for the ack, fan-out to every other member, and REST, and checks that every
+acknowledged message reached every connected member. Its REST traffic comes from one address, so
+start the stack with `THROTTLE_IP_PER_MINUTE=1000000`.
+
+```bash
+node apps/api/scripts/chat-load.mjs --sockets 20000 --rate 250 --duration 60 --connect-rate 100 \
+  --nodes http://<ws-1 ip>:4000,http://<ws-2 ip>:4000 --edge http://<nginx ip>:8080
+```
+
+Results of the M3 runs. Everything ran on one 4-vCPU, 15 GB host: both WebSocket nodes, the REST
+node, the worker, PostgreSQL, PgBouncer, both Redis servers, nginx, and the load generator itself
+(about 0.6 of a core). All runs had 20,000 sockets, 10,000 per node, and each message fans out
+to 9 members.
+
+| Rate | Delivered | Ack p50 / p95 / p99 ms | Fan-out p50 / p95 / p99 ms | REST p95 ms, alone → during | Host busy |
+| --- | --- | --- | --- | --- | --- |
+| 250 msg/s (18,830 sockets connected) | 100%, 244 msg/s | 12 / 104 / 1,007 | 13 / 119 / 1,023 | 51 → 111 | 76% |
+| 250 msg/s | 100%, 250 msg/s | 12 / 156 / 1,206 | 14 / 228 / 1,216 | 43 → 119 | 77% |
+| 350 msg/s | 100%, 333 msg/s; 375 refused `SERVICE_UNAVAILABLE` | 98 / 4,037 / 4,772 | 119 / 4,044 / 4,842 | 51 → 214 | 90% |
+| 500 msg/s | 100%, 430 msg/s; 3,412 refused `SERVICE_UNAVAILABLE` | 4,065 / 5,173 / 5,364 | 4,093 / 5,216 / 5,457 | 46 → 187 | 92% |
+
+- **At 250 msg/s** the first run met every target: ack p95 < 150 ms, fan-out p95 < 250 ms, REST
+  p95 < 200 ms during the chat load. The second run missed ack p95 by 6 ms.
+- **At 500 msg/s** the host saturates at about 430 msg/s. Queues build, and sends that wait five
+  seconds for a database connection are refused as `SERVICE_UNAVAILABLE` (the client retries with
+  the same `clientMsgId`). Nothing acknowledged was lost, and no socket dropped.
+- **CPU per message**, measured at 430 msg/s including receipts: PostgreSQL about 2.3 ms, the two
+  WebSocket nodes together about 3.2 ms. Estimate only, not measured: with PostgreSQL and each
+  WebSocket node on cores of their own, 500 msg/s needs about 1.2 cores of PostgreSQL and 1.6 of
+  WebSocket nodes.
+- **Connecting.** Cold caches cost three database transactions per connection. On this host,
+  100 connections/s gave a handshake p95 of 123 ms (subscribe included: 234 ms). 200/s gave
+  about 3 s, and in one run 1,170 connections were refused as `SERVICE_UNAVAILABLE`. Reconnects
+  find the user's standing and membership cached for 5 minutes.
 
 ## Configuration
 

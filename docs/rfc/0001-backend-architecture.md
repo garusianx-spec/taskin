@@ -1165,3 +1165,60 @@ M2 follows this RFC except where noted below. As in Addendum A, each entry says 
 - **Search runs through SECURITY DEFINER lookups** (`app.search_task_ids`, `app.search_note_ids`), which is a change from §6's plain `LIKE` under RLS.
   - **Why:** under row-level security, PostgreSQL never uses an operator that is not leakproof (such as `LIKE`) as an index condition, so the trigram index could narrow a search only by workspace.
   - **Scope:** the lookups return ids only, and only from the caller's workspace (and the caller's notes), as the transaction settings name them. The RLS suite asserts this.
+
+## Addendum C. Implementation notes (M3)
+
+M3 follows this RFC except where noted below. As in Addenda A and B, each entry says what changed and why.
+
+**Transport and fan-out**
+
+| RFC | Implemented | Why |
+| --- | --- | --- |
+| Namespace `/rt` (§4) | The Socket.IO **path** is `/rt`, with the default namespace | The edge routes by path; one namespace is all the client needs |
+| Workers emit through `@socket.io/redis-emitter` (§4, §5) | A realtime bus: processes without sockets (REST nodes, the relay, the worker) publish operations on `{prefix}:rt:bus`, and every WebSocket node applies them to its own sockets, in order. Gateway nodes emit through the adapter directly | The emitter cannot reach the sharded adapter, and several operations need logic on the node: re-evaluating a member's rooms after a permission change, or joining a new conversation only on sockets subscribed to that workspace |
+| `room_{cid}`, `workspace_{wid}` … | `user:`, `session:`, `ws:`, `project:`, `conv:` | Short, and unambiguous when logged |
+| Node heartbeat TTL 30 s (§5) | 10 s, refreshed every 3 s | With the 10 s grace, a 2 s sweep and the 2 s announcement batch, a dead node's users go offline within about 25 s, which meets the checklist's 30 s |
+| Every WebSocket mutation audited | WebSocket sends are not audited (edits, deletes and REST sends are) | A per-message audit row would double the hot path's writes; the message row itself records who, when and where |
+| — | Added `auth:expired`, `member:joined`, `member:removed`; the handshake can also fail with `SERVICE_UNAVAILABLE` | The client needs to tell "refresh your token" from "retry later" from "sign in again" |
+| — | REST routes for reactions and read cursors, next to the socket events | The HTTP fallback the RFC promises for sending covers the other chat writes too |
+
+**The hot path**
+
+- **One round trip, as §0.3 intended.** The first implementation ran the send CTE in a unit of work, which is four round trips: `BEGIN`, `set_config`, the CTE, `COMMIT`. Under load, most pooled connections sat idle in transaction, waiting for a busy event loop between round trips.
+  - A plain message is now one call to `app.send_message`, a PL/pgSQL function with no transaction block. It runs as the caller, so row-level security stays in force, and sets the tenant itself. PostgreSQL keeps the function's plan per connection.
+  - Mentions, replies, files and REST sends call the same function inside a unit of work, next to their outbox or audit row.
+  - On the load host this raised throughput from 242 to 430 messages per second and lowered PostgreSQL's CPU per message.
+- **Read receipts from sockets are written in batches.** Each node writes the receipts of a one-second window in one call to `app.advance_cursors`, which is SECURITY DEFINER because a batch spans workspaces. The function:
+  - matches every row on its own workspace;
+  - moves only members who have not left;
+  - moves cursors only forwards, never past the last message;
+  - skips rows a send holds (`FOR UPDATE SKIP LOCKED`) for the next window, rather than waiting on them. Before this, batches and sends queued behind each other's row locks.
+
+  The ack therefore means "queued", and a node crash loses at most a second of receipts, which clients send again with their next read. The REST route stays synchronous and audited.
+- **Shared lookups on a cold cache.** A cache miss on a user's standing (security version, status) shares one query with every other miss that arrives while it is in flight. In a reconnect storm a few queries answer thousands of handshakes.
+- **An unreachable or exhausted database is `SERVICE_UNAVAILABLE`**, on the socket and as a REST 503 with `Retry-After`, not an internal error. Clients retry, and a send retried with the same `clientMsgId` is idempotent.
+
+**Access**
+
+- **Conversations are private to their members**, and this includes the workspace owner: owning the workspace does not open other people's direct messages or private groups. This is a deliberate exception to "the owner can do everything" (§11).
+- Public channels can be read and joined by any non-guest who holds `messages:view`.
+- Managing a group or channel (settings, members) needs its `owner` or `admin` role; a workspace owner who is a member counts as its admin. Deleting other people's messages needs that, or `messages:delete`, and membership.
+- A project or permission change re-evaluates the rooms of the affected sockets. That costs one query per affected user on each node that holds their sockets, so a matrix change in a large workspace is a burst of those queries.
+
+**Deferred**
+
+- `link_previews` and link unfurling move to M4, with the rest of the SSRF-sensitive work.
+- The message search lookup moves to M4, with the search endpoint. Messages already store `search_text` and its trigram index.
+
+**Limits and configuration**
+
+- The per-socket send limit is configurable (`WS_SEND_BURST`, `WS_SEND_PER_SECOND`).
+- So are the REST limits (`THROTTLE_IP_PER_MINUTE`, `THROTTLE_USER_PER_MINUTE`). The scaled stack trusts nginx's `X-Forwarded-For`, so the per-IP limit counts clients, not the proxy.
+
+**The load test**
+
+- **Tool.** The run uses a Node tool (`apps/api/scripts/chat-load.mjs`) on `socket.io-client` instead of k6: k6 speaks Socket.IO only through an extension, and the Node client is the one the web app will use. It reports ack, fan-out and REST percentiles, and checks that every acknowledged message reached every connected member.
+- **Where it ran.** The M3 runs used one 4-vCPU host shared by every service and by the load generator. The results table is in `apps/api/README.md`.
+- **Met:** 10,000 sockets per node with no drops, 100% delivery, and REST p95 under 200 ms during the chat load.
+- **Latency targets:** met at 250 messages per second in one run; the other run missed ack p95 by 6 ms (156 ms).
+- **Not met: 500 messages per second.** The host saturates at about 430, with sends queueing for seconds. The measured CPU per message is about 2.3 ms in PostgreSQL and 3.2 ms across the WebSocket nodes. From those numbers we estimate, without having measured it, that 500 messages per second needs roughly 1.2 cores of PostgreSQL and 1.6 of WebSocket nodes. That capacity check has to be repeated on hardware laid out as §2 describes.

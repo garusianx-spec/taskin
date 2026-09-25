@@ -29,21 +29,23 @@ npm run infra:up        # PostgreSQL 18, PgBouncer, Redis ×2, S3 (SeaweedFS), M
 npm run test:int        # API integration suites against a database migrated from zero
 npm run infra:app       # also builds and runs the API image (migrations first) on :4000
 npm run infra:down
+# The scaled topology: REST node, two WebSocket nodes, worker, nginx on :8080
+docker compose -f infra/docker-compose.yml -f infra/compose.scale.yml --profile scale up -d --build --wait
 ```
 
 See [apps/api/README.md](apps/api/README.md) for running the API outside Docker, its
-configuration and its test layout.
+configuration, its test layout, and the scale-out smoke test and chat load results.
 
 The repository is an npm-workspaces monorepo:
 
 | Path | Contents |
 | --- | --- |
 | `apps/web` | The Next.js app |
-| `apps/api` | The NestJS API: auth, workspaces, RBAC, projects, board, tasks, files, notes, calendar, notifications (M1–M2 of RFC 0001) |
+| `apps/api` | The NestJS API: auth, workspaces, RBAC, projects, board, tasks, files, notes, calendar, notifications, and real-time chat on a Socket.IO gateway (M1–M3 of RFC 0001) |
 | `packages/contracts` | Domain types, API contracts and the permission vocabulary, shared by web and API |
 | `packages/jalali` | Jalali calendar engine and Persian date formatting |
 | `packages/text` | Persian text helpers: digits, Iranian mobile numbers, monograms, note Markdown and checklists, search normalisation |
-| `infra` | Docker Compose stack for local development, database roles, S3 configuration |
+| `infra` | Docker Compose stacks for local development and the scaled topology, database roles, S3 and nginx configuration |
 | `docs/rfc` | Architecture decisions; the backend design is [RFC 0001](docs/rfc/0001-backend-architecture.md) |
 
 Packages compile to `dist/`. While `npm run dev` is running, run `npm run build:packages -- --watch`
@@ -399,9 +401,9 @@ the message text and any attachment. Verified: zero horizontal overflow on every
 
 The web app is a complete front end against an in-memory fixture
 (`apps/web/src/data/workspace.ts`). The API it will talk to exists (`apps/api`, milestones M1
-and M2: sign-in, workspaces, members, invitations, roles, projects, the board, tasks, files,
-notes, the calendar and notifications; chat arrives in M3), but wiring the two together is
-milestone M4, so for now the front end does not call it. Consequences worth stating plainly:
+to M3: sign-in, workspaces, members, invitations, roles, projects, the board, tasks, files,
+notes, the calendar, notifications, and real-time chat over Socket.IO), but wiring the two
+together is milestone M4, so for now the front end does not call it. Consequences worth stating plainly:
 
 - **Voice messages have no audio files.** `VoicePlayer` implements both transports: when a
   message carries a `src` it drives a real `HTMLAudioElement` (seeking, `timeupdate`,
