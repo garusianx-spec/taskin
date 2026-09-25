@@ -72,8 +72,12 @@ jobs:
           docker exec s3 sh -c "echo 's3.bucket.create -name taskin-files' | weed shell -master=127.0.0.1:9333"
       - name: Migrations are consistent, and the schema has no ungenerated changes
         run: |
+          # drizzle-kit loads the schema, which imports the workspace packages: build them first.
+          npm run build -w @taskin/contracts -w @taskin/jalali -w @taskin/text
           npm run db:check -w @taskin/api
-          npm run db:generate -w @taskin/api
+          # drizzle-kit exits 0 even when it cannot load the schema, so an error in its output fails the step.
+          npm run db:generate -w @taskin/api 2>&1 | tee "$RUNNER_TEMP/db-generate.log"
+          if grep -qi 'error' "$RUNNER_TEMP/db-generate.log"; then exit 1; fi
           test -z "$(git status --porcelain apps/api/db)" || { git status --porcelain apps/api/db; exit 1; }
       - name: Integration suite (migrates a fresh database from zero)
         run: npm run test:int
