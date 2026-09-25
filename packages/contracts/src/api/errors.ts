@@ -45,7 +45,16 @@ export type ApiErrorCode =
   | 'INVITATION_ADDRESS_MISMATCH'
   | 'ALREADY_MEMBER'
   | 'UPLOAD_INVALID'
-  | 'DEPARTMENT_IN_USE';
+  | 'DEPARTMENT_IN_USE'
+  // Projects, board and tasks
+  | 'PROJECT_KEY_TAKEN'
+  | 'PROJECT_ARCHIVED'
+  | 'COLUMN_GONE'
+  | 'WORKFLOW_CATEGORY_REQUIRED'
+  | 'BOARD_CHANGED'
+  | 'ASSIGNEE_NO_ACCESS'
+  // Notes
+  | 'NOTE_CATEGORY_IN_USE';
 
 export interface FieldError {
   /** Dotted path of the offending field, e.g. `recipients.2.address`. */
@@ -64,4 +73,6 @@ export interface ProblemDetails {
   /** Correlates the response with server logs, traces and audit rows. */
   readonly requestId: string;
   readonly errors?: readonly FieldError[];
+  /** With 412 PRECONDITION_FAILED: the resource as it is now, so the client can merge. */
+  readonly current?: unknown;
 }

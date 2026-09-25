@@ -71,3 +71,15 @@ test('note checklists round-trip through the block editor model', () => {
     subtasks: ['Send the agenda'],
   });
 });
+
+test('search normalisation folds Arabic letters, diacritics, tatweel, ZWNJ, digits and case', async () => {
+  const { normaliseForSearch, escapeLike } = await import('../dist/index.js');
+  assert.equal(normaliseForSearch('كتاب'), normaliseForSearch('کتاب'));
+  assert.equal(normaliseForSearch('علي'), 'علی');
+  assert.equal(normaliseForSearch('کتـــاب'), 'کتاب');
+  assert.equal(normaliseForSearch('مُحَمَّد'), 'محمد');
+  assert.equal(normaliseForSearch('می‌روم'), 'می روم');
+  assert.equal(normaliseForSearch('گزارش ۱۴۰۳'), 'گزارش 1403');
+  assert.equal(normaliseForSearch('  CRM-104   Launch  '), 'crm-104 launch');
+  assert.equal(escapeLike('50%_off\\'), '50\\%\\_off\\\\');
+});
