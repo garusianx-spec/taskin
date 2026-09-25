@@ -7,6 +7,7 @@
     "packages/contracts",
     "packages/jalali",
     "packages/text",
+    "apps/api",
     "apps/web"
   ],
   "engines": {
@@ -20,9 +21,14 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e -w @taskin/web",
-    "check:contrast": "npm run check:contrast -w @taskin/web"
+    "check:contrast": "npm run check:contrast -w @taskin/web",
+    "test:int": "npm run test:int -w @taskin/api",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait postgres pgbouncer redis-core redis-rt s3 s3-init mailpit",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:app": "docker compose -f infra/docker-compose.yml --profile app up -d --build --wait"
   },
   "devDependencies": {
+    "drizzle-orm": "0.45.3",
     "typescript": "5.7.2",
     "typescript-eslint": "8.70.1"
   }
