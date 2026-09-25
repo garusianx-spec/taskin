@@ -26,6 +26,36 @@ export function check(condition, message) {
   console.log(`${condition ? 'PASS' : 'FAIL'}  ${message}`);
 }
 
+/**
+ * Resolves true as soon as `probe()` returns something truthy, or false once `timeout` ms pass.
+ *
+ * Playwright actions wait for their target, but a bare read right after one (`count()`,
+ * `textContent()`, `getAttribute()`, `evaluate()`) is a snapshot that can land before React has
+ * committed the result on a slow runner. Checks on state that an action changes poll through
+ * this instead. A probe that throws (say, an element detached mid-read) counts as "not yet".
+ * Checks that something *stays* unchanged keep their snapshot: polling would pass them early.
+ */
+export async function eventually(probe, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    try {
+      if (await probe()) return true;
+    } catch {
+      // Not settled yet; try again.
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/** The waiting counterpart of `locator.isVisible()`: true once the element shows, false on timeout. */
+export function visible(locator, timeout = 5000) {
+  return locator.waitFor({ state: 'visible', timeout }).then(
+    () => true,
+    () => false,
+  );
+}
+
 /** Chromium from `CHROMIUM_PATH` when set (a preinstalled browser), else Playwright's own install. */
 export function launch() {
   return chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
