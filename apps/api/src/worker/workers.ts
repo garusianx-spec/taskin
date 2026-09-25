@@ -16,8 +16,13 @@ import {
   queueConnection,
   queuePrefix,
   Queues,
+  type WorkJobData,
+  type WorkJobs,
 } from '../platform/queue/queues.js';
 import { SmsService } from '../platform/sms/sms.js';
+import { CalendarService } from '../modules/content/calendar.service.js';
+import { FeedService } from '../modules/content/feed.service.js';
+import { FilesService } from '../modules/content/files.service.js';
 import { WorkspacesService } from '../modules/workspaces/workspaces.service.js';
 
 /** Opens the sealed values (invitation links) only at the moment of sending. */
@@ -75,6 +80,33 @@ export class NotificationsProcessor {
   }
 }
 
+/** Domain side effects of outbox events: inbox and feed fan-out, file scanning, reminders. */
+@Injectable()
+export class WorkProcessor {
+  constructor(
+    private readonly feed: FeedService,
+    private readonly files: FilesService,
+    private readonly calendar: CalendarService,
+  ) {}
+
+  async handle<N extends keyof WorkJobs>(name: N, data: WorkJobData<N>): Promise<unknown> {
+    switch (name) {
+      case 'feed.fanout':
+        return this.feed.fanout(data.payload as WorkJobs['feed.fanout']);
+      case 'file.scan': {
+        const payload = data.payload as WorkJobs['file.scan'];
+        return this.files.scan(payload.workspaceId, payload.attachmentId);
+      }
+      case 'event.remind': {
+        const payload = data.payload as WorkJobs['event.remind'];
+        return this.calendar.remind(payload.workspaceId, payload.eventId, payload.version);
+      }
+      default:
+        return undefined;
+    }
+  }
+}
+
 @Injectable()
 export class MaintenanceProcessor {
   private readonly logger = new Logger('Maintenance');
@@ -83,6 +115,7 @@ export class MaintenanceProcessor {
     private readonly database: Database,
     private readonly workspaces: WorkspacesService,
     private readonly relay: OutboxRelay,
+    private readonly files: FilesService,
   ) {}
 
   async handle(name: MaintenanceJob): Promise<unknown> {
@@ -95,6 +128,8 @@ export class MaintenanceProcessor {
       }
       case 'workspace.purge':
         return { purged: await this.workspaces.purgeDue() };
+      case 'files.gc':
+        return this.files.collectGarbage();
       case 'cleanup': {
         const challenges = await this.database.db
           .delete(otpChallenges)
@@ -124,6 +159,7 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly queues: Queues,
     private readonly context: RequestContext,
     private readonly notifications: NotificationsProcessor,
+    private readonly work: WorkProcessor,
     private readonly maintenance: MaintenanceProcessor,
   ) {}
 
@@ -136,6 +172,7 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
         (job) => this.runNotification(job.name as keyof NotificationJobs, job.data),
         { ...options, concurrency: 8 },
       ),
+      new Worker<WorkJobData, unknown>(QUEUE_NAMES.work, (job) => this.runWork(job.name as keyof WorkJobs, job.data), { ...options, concurrency: 8 }),
       new Worker<Record<string, never>, unknown>(
         QUEUE_NAMES.maintenance,
         (job) => this.context.run({}, () => this.maintenance.handle(job.name as MaintenanceJob)),
@@ -149,10 +186,16 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
     await this.queues.maintenance.upsertJobScheduler('audit-partitions', { every: 24 * 3600 * 1000 }, { name: 'audit.partitions' });
     await this.queues.maintenance.upsertJobScheduler('workspace-purge', { every: 10 * 60 * 1000 }, { name: 'workspace.purge' });
     await this.queues.maintenance.upsertJobScheduler('cleanup', { every: 3600 * 1000 }, { name: 'cleanup' });
+    await this.queues.maintenance.upsertJobScheduler('files-gc', { every: 3600 * 1000 }, { name: 'files.gc' });
   }
 
   async onModuleDestroy(): Promise<void> {
     await Promise.allSettled(this.workers.map((worker) => worker.close()));
+  }
+
+  /** One work job, in a context carrying the request id and trace id that caused it. */
+  runWork(name: keyof WorkJobs, data: WorkJobData): Promise<unknown> {
+    return this.context.run({ requestId: data.headers.requestId, traceId: data.headers.traceId }, () => this.work.handle(name, data));
   }
 
   /** One notification job, in a context carrying the request id and trace id that caused it. */

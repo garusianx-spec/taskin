@@ -11,6 +11,8 @@ import { AuthController } from './modules/auth/auth.controller.js';
 import { JwtAuthGuard } from './modules/auth/guards.js';
 import { DomainModule } from './modules/domain.module.js';
 import { MeController } from './modules/users/me.controller.js';
+import { ContentController, InboxController } from './modules/content/content.controller.js';
+import { WorkController } from './modules/work/work.controller.js';
 import { WorkspaceController, WorkspaceEntryController } from './modules/workspaces/workspaces.controller.js';
 import type { RequestContextStore } from './platform/context/request-context.js';
 import { HealthController } from './platform/health/health.controller.js';
@@ -24,7 +26,7 @@ import { loggerParams } from './platform/logging/logging.js';
 import { OutboxRelay } from './platform/outbox/outbox-relay.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { RedisClients } from './platform/redis/redis.js';
-import { MaintenanceProcessor, NotificationsProcessor, QueueWorkers } from './worker/workers.js';
+import { MaintenanceProcessor, NotificationsProcessor, QueueWorkers, WorkProcessor } from './worker/workers.js';
 
 export interface AppModuleOptions {
   /** Where logs go; tests capture them to assert correlation ids. Defaults to stdout. */
@@ -65,7 +67,7 @@ class HttpApiModule {
           }),
         }),
       ],
-      controllers: [AuthController, MeController, WorkspaceEntryController, WorkspaceController],
+      controllers: [AuthController, MeController, InboxController, WorkspaceEntryController, WorkspaceController, WorkController, ContentController],
       providers: pipeline,
     };
   }
@@ -74,8 +76,8 @@ class HttpApiModule {
 /** Queue consumers, schedules and the outbox relay. */
 @Module({
   imports: [DomainModule],
-  providers: [OutboxRelay, NotificationsProcessor, MaintenanceProcessor, QueueWorkers],
-  exports: [OutboxRelay, NotificationsProcessor, MaintenanceProcessor, QueueWorkers],
+  providers: [OutboxRelay, NotificationsProcessor, WorkProcessor, MaintenanceProcessor, QueueWorkers],
+  exports: [OutboxRelay, NotificationsProcessor, WorkProcessor, MaintenanceProcessor, QueueWorkers],
 })
 class WorkerModule {}
 

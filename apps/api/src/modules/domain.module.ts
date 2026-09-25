@@ -16,6 +16,16 @@ import { IconsService } from './workspaces/icons.service.js';
 import { InvitationsService } from './workspaces/invitations.service.js';
 import { MembersService } from './workspaces/members.service.js';
 import { WorkspacesService } from './workspaces/workspaces.service.js';
+import { CalendarService } from './content/calendar.service.js';
+import { FeedService } from './content/feed.service.js';
+import { FilesService } from './content/files.service.js';
+import { NotesService } from './content/notes.service.js';
+import { ReportsService } from './content/reports.service.js';
+import { AccessService } from './work/access.js';
+import { BoardService } from './work/board.service.js';
+import { LabelsService } from './work/labels.service.js';
+import { ProjectsService } from './work/projects.service.js';
+import { TasksService } from './work/tasks.service.js';
 
 const services = [
   // auth
@@ -42,10 +52,22 @@ const services = [
   MembersService,
   DepartmentsService,
   InvitationsService,
+  // work: projects, board, tasks
+  AccessService,
+  ProjectsService,
+  BoardService,
+  TasksService,
+  LabelsService,
+  // content: files, notes, calendar, feed, reports
+  FilesService,
+  NotesService,
+  FeedService,
+  CalendarService,
+  ReportsService,
 ];
 
 /**
- * The bounded contexts' services (auth, users, rbac, workspaces). No controllers: the HTTP API
+ * The bounded contexts' services (auth, users, rbac, workspaces, work, content). No controllers: the HTTP API
  * and the worker each import this and add their own entry points, so a worker can never expose
  * a route without the HTTP guards in front of it.
  */
