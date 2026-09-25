@@ -102,6 +102,25 @@ jobs:
         if: failure()
         run: docker compose -f infra/docker-compose.yml --profile app logs --tail 100
 
+  scale:
+    name: Scaled stack (REST node, two WebSocket nodes, worker, nginx)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --workspace @taskin/api --include-workspace-root
+      - name: Build the API image and start the scaled topology
+        run: docker compose -f infra/docker-compose.yml -f infra/compose.scale.yml --profile scale up -d --build --wait --wait-timeout 300
+      - name: Cross-node delivery, edge routing and relay-driven room changes
+        run: node apps/api/scripts/scale-smoke.mjs
+      - name: Service logs
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml -f infra/compose.scale.yml --profile scale logs --tail 100
+
   e2e:
     name: Playwright suites (production build)
     runs-on: ubuntu-latest
