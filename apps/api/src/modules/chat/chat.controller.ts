@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPi
 import { ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type {
+  ConvertMessageResult,
   ConversationDetail,
   ConversationMemberView,
   ConversationView,
@@ -16,7 +17,10 @@ import { Idempotent } from '../../platform/http/idempotency.js';
 import type { MembershipContext } from '../../platform/http/request.js';
 import { Authenticated } from '../auth/guards.js';
 import { CurrentMember, WorkspaceScoped } from '../rbac/guards.js';
+import { MessageTasksService } from '../bridges/message-tasks.service.js';
 import {
+  ConvertMessageDto,
+  ConvertMessageResultDto,
   ConversationDetailDto,
   ConversationListQueryDto,
   ConversationMemberViewDto,
@@ -54,6 +58,7 @@ export class ChatController {
   constructor(
     private readonly conversations: ConversationsService,
     private readonly messages: MessagesService,
+    private readonly messageTasks: MessageTasksService,
   ) {}
 
   @Get()
@@ -207,10 +212,26 @@ export class ChatController {
     await this.messages.advance(member, conversationId, { read: body.seq }, { audit: true });
   }
 
+  @Post(':conversationId/messages/:messageId/task')
+  @Idempotent()
+  @ApiOperation({ summary: 'تبدیل پیام به وظیفه: a task linked to this message (one live task per message)' })
+  @ApiCreatedResponse({ type: ConvertMessageResultDto })
+  @ApiOkResponse({ type: ConvertMessageResultDto, description: 'The message already had a live task; it is returned' })
+  async convertToTask(
+    @CurrentMember() member: MembershipContext,
+    @Param('conversationId', UUID) conversationId: string,
+    @Param('messageId', UUID) messageId: string,
+    @Body() body: ConvertMessageDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ConvertMessageResult> {
+    const result = await this.messageTasks.convert(member, conversationId, messageId, body);
+    response.status(result.existing ? HttpStatus.OK : HttpStatus.CREATED);
+    return result;
+  }
+
   @Get(':conversationId/media')
   @ApiOkResponse({ type: MediaPageDto })
   media(@CurrentMember() member: MembershipContext, @Param('conversationId', UUID) conversationId: string, @Query() query: MediaQueryDto): Promise<MediaPage> {
     return this.messages.media(member, conversationId, query);
   }
-
 }

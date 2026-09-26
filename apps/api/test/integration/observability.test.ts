@@ -187,6 +187,7 @@ describe('M1 checklist: audit trail and correlation', () => {
     await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/star', `${tk}/star`, (r) => r.set(bearer(user)));
     const subtask = (await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks', `${tk}/subtasks`, (r) => r.set(bearer(user)).send({ title: 'گام' }))).body;
     await traced('patch', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks/{subtaskId}', `${tk}/subtasks/${subtask.id}`, (r) => r.set(bearer(user)).send({ done: true }));
+    await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks/{subtaskId}/move', `${tk}/subtasks/${subtask.id}/move`, (r) => r.set(bearer(user)).send({}));
     await traced('delete', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks/{subtaskId}', `${tk}/subtasks/${subtask.id}`, (r) => r.set(bearer(user)));
     const comment = (await traced('post', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/comments', `${tk}/comments`, (r) => r.set(bearer(user)).send({ body: 'نظر' }))).body;
     await traced('patch', '/api/v1/workspaces/{workspaceId}/tasks/{taskId}/comments/{commentId}', `${tk}/comments/${comment.id}`, (r) => r.set(bearer(user)).send({ body: 'نظر تازه' }));
@@ -227,6 +228,7 @@ describe('M1 checklist: audit trail and correlation', () => {
     await traced('patch', `${cv}/{conversationId}/messages/{messageId}`, mg, (r) => r.set(bearer(user)).send({ text: 'پیام ویرایش‌شده' }));
     await traced('put', `${cv}/{conversationId}/messages/{messageId}/reactions/{emoji}`, `${mg}/reactions/${encodeURIComponent('👍')}`, (r) => r.set(bearer(user)));
     await traced('delete', `${cv}/{conversationId}/messages/{messageId}/reactions/{emoji}`, `${mg}/reactions/${encodeURIComponent('👍')}`, (r) => r.set(bearer(user)));
+    await traced('post', `${cv}/{conversationId}/messages/{messageId}/task`, `${mg}/task`, (r) => idem(r).send({ projectId: project.id, title: 'از پیام' }));
     await traced('post', `${cv}/{conversationId}/read`, `${cn}/read`, (r) => r.set(bearer(user)).send({ seq: 1 }));
     await traced('delete', `${cv}/{conversationId}/messages/{messageId}`, mg, (r) => r.set(bearer(user)));
     await traced('delete', `${cv}/{conversationId}/members/{userId}`, `${cn}/members/${joiner.userId}`, (r) => r.set(bearer(user)));

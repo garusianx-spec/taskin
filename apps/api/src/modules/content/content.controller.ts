@@ -6,6 +6,7 @@ import type {
   CalendarEventView,
   CalendarView,
   ConvertNoteResult,
+  FileLink,
   MonthlyTaskReport,
   NoteCategoryView,
   NotePage,
@@ -18,7 +19,7 @@ import { Idempotent } from '../../platform/http/idempotency.js';
 import type { AuthPrincipal, MembershipContext } from '../../platform/http/request.js';
 import { Authenticated, CurrentAuth } from '../auth/guards.js';
 import { CurrentMember, WorkspaceScoped } from '../rbac/guards.js';
-import { AttachmentViewDto } from '../work/work.dto.js';
+import { AttachmentViewDto, FileLinkDto } from '../work/work.dto.js';
 import { CalendarService } from './calendar.service.js';
 import {
   ActivityPageDto,
@@ -32,6 +33,7 @@ import {
   CreateNoteCategoryDto,
   CreateNoteDto,
   CreateUploadDto,
+  FileLinkQueryDto,
   InboxQueryDto,
   MarkedDto,
   MarkNotificationsReadDto,
@@ -100,6 +102,13 @@ export class ContentController {
   @ApiFoundResponse()
   async download(@CurrentMember() member: MembershipContext, @Param('attachmentId', UUID) attachmentId: string): Promise<{ url: string; statusCode: number }> {
     return { url: await this.files.downloadUrl(member, attachmentId), statusCode: HttpStatus.FOUND };
+  }
+
+  @Get('files/:attachmentId/link')
+  @ApiOperation({ summary: 'A short-lived link as JSON: `inline` for images, audio and video (to show or play), else a download' })
+  @ApiOkResponse({ type: FileLinkDto })
+  fileLink(@CurrentMember() member: MembershipContext, @Param('attachmentId', UUID) attachmentId: string, @Query() query: FileLinkQueryDto): Promise<FileLink> {
+    return this.files.link(member, attachmentId, query.disposition ?? 'attachment');
   }
 
   /* ----------------------------------------------------------- notes */

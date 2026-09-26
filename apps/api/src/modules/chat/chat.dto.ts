@@ -18,6 +18,8 @@ import {
 } from 'class-validator';
 import type {
   AvatarTone,
+  ConvertMessageBody,
+  ConvertMessageResult,
   ConversationDetail,
   ConversationKind,
   ConversationMemberView,
@@ -38,11 +40,13 @@ import type {
   ReadCursorBody,
   SendMessageBody,
   SentMessage,
+  TaskPriority,
   UpdateConversationBody,
   UpdateMyConversationBody,
 } from '@taskin/contracts';
 import { AVATAR_TONES } from '../users/me.controller.js';
-import { AttachmentViewDto } from '../work/work.dto.js';
+import { OptionalNullableDate, OptionalNullableUuid } from '../../platform/http/dto.js';
+import { AttachmentViewDto, TASK_PRIORITIES, TaskDetailDto } from '../work/work.dto.js';
 
 export const CONVERSATION_KINDS: readonly ConversationKind[] = ['direct', 'group', 'channel'];
 export const CONVERSATION_ROLES: readonly ConversationRole[] = ['owner', 'admin', 'member'];
@@ -249,4 +253,28 @@ export class MediaItemDto implements MediaItem {
 export class MediaPageDto implements MediaPage {
   @ApiProperty({ type: MediaItemDto, isArray: true }) readonly items!: MediaItemDto[];
   @ApiProperty({ type: String, nullable: true }) readonly nextCursor!: string | null;
+}
+
+/* ------------------------------------------------------------------ message → task */
+
+export class ConvertMessageDto implements ConvertMessageBody {
+  @ApiProperty({ format: 'uuid' }) @IsUUID() readonly projectId!: string;
+  @ApiProperty({ minLength: 1, maxLength: 200 }) @IsString() @Length(1, 200) readonly title!: string;
+  @ApiPropertyOptional({ maxLength: 20000 }) @IsOptional() @IsString() @MaxLength(20000) readonly description?: string;
+  @ApiPropertyOptional({ type: String, nullable: true, format: 'uuid' }) @OptionalNullableUuid() readonly columnId?: string | null;
+  @ApiPropertyOptional({ enum: TASK_PRIORITIES }) @IsOptional() @IsIn(TASK_PRIORITIES) readonly priority?: TaskPriority;
+  @ApiPropertyOptional({ type: String, isArray: true, format: 'uuid' }) @IsOptional() @IsArray() @ArrayMaxSize(20) @IsUUID('all', { each: true }) readonly assigneeIds?: string[];
+  @ApiPropertyOptional({ type: String, nullable: true, format: 'date' }) @OptionalNullableDate() readonly dueDate?: string | null;
+  @ApiPropertyOptional({ type: String, isArray: true }) @IsOptional() @IsArray() @ArrayMaxSize(100) @IsString({ each: true }) @Length(1, 200, { each: true }) readonly subtasks?: string[];
+  @ApiPropertyOptional({ type: String, isArray: true, format: 'uuid', description: "The message's own file; nothing else can be linked here" })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1)
+  @IsUUID('all', { each: true })
+  readonly attachmentIds?: string[];
+}
+
+export class ConvertMessageResultDto implements ConvertMessageResult {
+  @ApiProperty({ type: TaskDetailDto }) readonly task!: TaskDetailDto;
+  @ApiProperty({ description: '`true` when the message already had a live task, which is returned' }) readonly existing!: boolean;
 }

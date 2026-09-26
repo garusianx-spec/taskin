@@ -46,6 +46,7 @@ export const ERROR_CATALOGUE: Readonly<Record<ApiErrorCode, { readonly status: n
   COLUMN_GONE: { status: 409, title: 'The column was deleted' },
   WORKFLOW_CATEGORY_REQUIRED: { status: 409, title: 'The board needs at least one to-do and one done column' },
   BOARD_CHANGED: { status: 409, title: 'The board changed; reload it' },
+  SUBTASKS_CHANGED: { status: 409, title: 'The subtasks changed; reload the task' },
   ASSIGNEE_NO_ACCESS: { status: 422, title: 'An assignee cannot see this project' },
   NOTE_CATEGORY_IN_USE: { status: 409, title: 'The category still has notes' },
   CONVERSATION_ARCHIVED: { status: 409, title: 'The conversation is archived' },
@@ -53,6 +54,7 @@ export const ERROR_CATALOGUE: Readonly<Record<ApiErrorCode, { readonly status: n
   DIRECT_CONVERSATION: { status: 409, title: 'A direct chat always has exactly its two people' },
   EDIT_WINDOW_CLOSED: { status: 409, title: 'The message can no longer be edited' },
   MESSAGE_GONE: { status: 410, title: 'The message was deleted' },
+  MESSAGE_NOT_CONVERTIBLE: { status: 422, title: 'Only a text, file or voice message becomes a task' },
   NOT_SUBSCRIBED: { status: 409, title: 'Subscribe to the workspace first' },
 };
 

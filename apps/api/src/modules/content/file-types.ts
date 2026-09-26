@@ -89,7 +89,7 @@ export function sniff(bytes: Buffer, fileName: string): Sniffed | null {
   if (startsWith(bytes, 0x1f, 0x8b)) return { mime: 'application/gzip', kind: 'archive' };
   if (ascii(bytes, 0, 3) === 'ID3' || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0)) return { mime: 'audio/mpeg', kind: 'audio' };
   if (ascii(bytes, 0, 4) === 'OggS') return { mime: 'audio/ogg', kind: 'audio' };
-  if (startsWith(bytes, 0x1a, 0x45, 0xdf, 0xa3)) return { mime: 'video/webm', kind: 'video' };
+  if (startsWith(bytes, 0x1a, 0x45, 0xdf, 0xa3)) return webmKind(bytes);
   if (ascii(bytes, 4, 8) === 'ftyp') {
     const brand = ascii(bytes, 8, 12);
     if (brand.startsWith('M4A')) return { mime: 'audio/mp4', kind: 'audio' };
@@ -100,6 +100,17 @@ export function sniff(bytes: Buffer, fileName: string): Sniffed | null {
     return extension(fileName) === 'csv' ? { mime: 'text/csv', kind: 'sheet' } : { mime: 'text/plain', kind: 'document' };
   }
   return null;
+}
+
+/**
+ * WebM (Matroska) names its tracks' codecs near the start (`V_VP9`, `A_OPUS`, …). A file with an
+ * audio track and no video track is audio: that is what a browser's voice recorder produces.
+ */
+function webmKind(bytes: Buffer): Sniffed {
+  const head = bytes.toString('latin1');
+  if (/V_(VP8|VP9|AV1|MPEG|THEORA)/.test(head)) return { mime: 'video/webm', kind: 'video' };
+  if (/A_(OPUS|VORBIS|AAC|MPEG|FLAC|PCM)/.test(head)) return { mime: 'audio/webm', kind: 'audio' };
+  return { mime: 'video/webm', kind: 'video' };
 }
 
 /** The kind a claimed Content-Type stands for (for the pending row and the spoofing check). */

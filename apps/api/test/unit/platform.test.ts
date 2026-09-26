@@ -3,6 +3,7 @@ import { AppConfig } from '../../src/config/app-config.js';
 import { envSchema, InvalidConfigError, loadEnv } from '../../src/config/env.js';
 import { toIranMobileE164 } from '../../src/modules/auth/otp.service.js';
 import { passwordProblem } from '../../src/modules/auth/password.service.js';
+import { sniff } from '../../src/modules/content/file-types.js';
 import { sniffImage } from '../../src/modules/workspaces/icons.service.js';
 import { redactChanges } from '../../src/platform/audit/audit-writer.js';
 import { acceptRequestId, traceIdFrom } from '../../src/platform/context/request-context.js';
@@ -116,6 +117,14 @@ describe('input checks', () => {
     expect(sniffImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))?.type).toBe('image/jpeg');
     expect(sniffImage(Buffer.from('RIFF\0\0\0\0WEBPVP8 ', 'latin1'))?.type).toBe('image/webp');
     expect(sniffImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull();
+  });
+
+  it('tells an audio-only WebM (a browser voice note) from a video', () => {
+    const ebml = [0x1a, 0x45, 0xdf, 0xa3];
+    const webm = (codecs: string) => Buffer.concat([Buffer.from(ebml), Buffer.from(`\x42\x86webm Tracks ${codecs}`, 'latin1'), Buffer.alloc(64, 0)]);
+    expect(sniff(webm('A_OPUS'), 'voice.webm')).toEqual({ mime: 'audio/webm', kind: 'audio' });
+    expect(sniff(webm('V_VP9 A_OPUS'), 'clip.webm')).toEqual({ mime: 'video/webm', kind: 'video' });
+    expect(sniff(webm(''), 'unknown.webm')).toEqual({ mime: 'video/webm', kind: 'video' });
   });
 
   it('asks for a reasonable password', () => {

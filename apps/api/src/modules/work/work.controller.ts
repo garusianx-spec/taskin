@@ -52,6 +52,7 @@ import {
   UpdateCommentDto,
   UpdateProjectDto,
   UpdateSubtaskDto,
+  MoveSubtaskDto,
   UpdateTaskDto,
   WorkflowViewDto,
 } from './work.dto.js';
@@ -322,6 +323,19 @@ export class WorkController {
     @Body() body: UpdateSubtaskDto,
   ): Promise<SubtaskView> {
     return this.tasks.updateSubtask(member, taskId, subtaskId, body);
+  }
+
+  @Post('tasks/:taskId/subtasks/:subtaskId/move')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reorder a subtask among its siblings (drag and drop): name its new neighbours' })
+  @ApiOkResponse({ type: SubtaskViewDto })
+  moveSubtask(
+    @CurrentMember() member: MembershipContext,
+    @Param('taskId', UUID) taskId: string,
+    @Param('subtaskId', UUID) subtaskId: string,
+    @Body() body: MoveSubtaskDto,
+  ): Promise<SubtaskView> {
+    return this.tasks.moveSubtask(member, taskId, subtaskId, body);
   }
 
   @Delete('tasks/:taskId/subtasks/:subtaskId')

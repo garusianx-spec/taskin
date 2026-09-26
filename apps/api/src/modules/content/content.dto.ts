@@ -98,6 +98,13 @@ export class CompletedPartDto {
   @ApiProperty() @IsString() @Length(1, 200) readonly etag!: string;
 }
 
+export class FileLinkQueryDto {
+  @ApiPropertyOptional({ enum: ['attachment', 'inline'], default: 'attachment' })
+  @IsOptional()
+  @IsIn(['attachment', 'inline'])
+  readonly disposition?: 'attachment' | 'inline';
+}
+
 export class CompleteUploadDto implements CompleteUploadBody {
   @ApiPropertyOptional({ type: CompletedPartDto, isArray: true })
   @IsOptional()

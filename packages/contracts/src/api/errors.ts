@@ -52,6 +52,7 @@ export type ApiErrorCode =
   | 'COLUMN_GONE'
   | 'WORKFLOW_CATEGORY_REQUIRED'
   | 'BOARD_CHANGED'
+  | 'SUBTASKS_CHANGED'
   | 'ASSIGNEE_NO_ACCESS'
   // Notes
   | 'NOTE_CATEGORY_IN_USE'
@@ -61,6 +62,7 @@ export type ApiErrorCode =
   | 'DIRECT_CONVERSATION'
   | 'EDIT_WINDOW_CLOSED'
   | 'MESSAGE_GONE'
+  | 'MESSAGE_NOT_CONVERTIBLE'
   | 'NOT_SUBSCRIBED';
 
 export interface FieldError {

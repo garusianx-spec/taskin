@@ -320,6 +320,21 @@ export interface DetailRow extends CardRow {
   comments: (Omit<TaskCommentView, 'createdAt' | 'editedAt'> & { createdAt: string; editedAt: string | null })[] | null;
   attachments: (Omit<AttachmentView, 'uploadedAt'> & { uploadedAt: string })[] | null;
   timeline: TaskEventView[] | null;
+  source_message: SourceMessageRow | null;
+}
+
+/** The message a task came from, with what decides whether the caller may see it. */
+export interface SourceMessageRow {
+  messageId: string;
+  conversationId: string;
+  authorId: string | null;
+  text: string | null;
+  kind: 'text' | 'voice' | 'file' | 'system';
+  sentAt: string;
+  deleted: boolean;
+  conversationKind: 'direct' | 'group' | 'channel';
+  isPrivate: boolean;
+  isMember: boolean;
 }
 
 /**
@@ -345,7 +360,17 @@ export function detailQuery(member: MembershipContext, taskId: string): SQL {
          where ta.task_id = t.id and f.deleted_at is null) as attachments,
       (select json_agg(json_build_object('id', e.id, 'actorId', e.actor_id, 'type', e.type, 'payload', e.payload,
                                          'createdAt', e.created_at) order by e.created_at desc, e.id desc)
-         from (select * from task_events where task_id = t.id order by created_at desc, id desc limit 50) e) as timeline
+         from (select * from task_events where task_id = t.id order by created_at desc, id desc limit 50) e) as timeline,
+      (select json_build_object('messageId', sm.id, 'conversationId', sm.conversation_id, 'authorId', sm.author_id,
+                                'text', case when sm.deleted_at is null then left(sm.body_text, 140) end, 'kind', sm.kind,
+                                'sentAt', sm.created_at, 'deleted', sm.deleted_at is not null,
+                                'conversationKind', sc.kind, 'isPrivate', sc.is_private,
+                                'isMember', exists (select 1 from conversation_members scm
+                                                    where scm.workspace_id = sm.workspace_id and scm.conversation_id = sm.conversation_id
+                                                      and scm.user_id = ${member.userId} and scm.left_at is null))
+         from messages sm
+         join conversations sc on sc.workspace_id = sm.workspace_id and sc.id = sm.conversation_id
+         where sm.workspace_id = t.workspace_id and sm.id = t.source_message_id) as source_message
     from tasks t
     join projects p on p.workspace_id = t.workspace_id and p.id = t.project_id
     where t.workspace_id = ${member.workspaceId} and t.id = ${taskId} and t.deleted_at is null and p.deleted_at is null`;

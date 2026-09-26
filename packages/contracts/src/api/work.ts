@@ -188,6 +188,16 @@ export interface AttachmentView {
   readonly uploadedAt: string;
 }
 
+/**
+ * A short-lived link to a file's bytes. `attachment` always downloads; `inline` (images, audio
+ * and video only) lets the browser show or play it. Other kinds are served as `attachment`.
+ */
+export interface FileLink {
+  readonly url: string;
+  readonly disposition: 'attachment' | 'inline';
+  readonly expiresAt: string;
+}
+
 /** One entry of a task's timeline. */
 export interface TaskEventView {
   readonly id: string;
@@ -195,6 +205,23 @@ export interface TaskEventView {
   readonly type: string;
   readonly payload: Readonly<Record<string, unknown>>;
   readonly createdAt: string;
+}
+
+/**
+ * The chat message a task was made from. Everyone who can see the task learns that it came from a
+ * message; only members of that conversation get where it is and what it said.
+ */
+export interface TaskSourceMessage {
+  readonly messageId: string;
+  /** `false` when the caller cannot see the conversation: the fields below are then `null`. */
+  readonly accessible: boolean;
+  readonly conversationId: string | null;
+  readonly authorId: string | null;
+  /** The message's text, cut to 140 characters; `null` for a file or voice note, or once deleted. */
+  readonly excerpt: string | null;
+  readonly kind: 'text' | 'voice' | 'file' | 'system' | null;
+  readonly sentAt: string | null;
+  readonly deleted: boolean;
 }
 
 export interface TaskDetail extends TaskCard {
@@ -208,6 +235,8 @@ export interface TaskDetail extends TaskCard {
   /** The latest 50 timeline entries, newest first. */
   readonly timeline: readonly TaskEventView[];
   readonly myActions: readonly PermissionActionId[];
+  /** Set when the task was converted from a chat message (`sourceMessageId`). */
+  readonly sourceMessage: TaskSourceMessage | null;
 }
 
 export interface BoardView {
@@ -275,6 +304,15 @@ export interface CompleteTaskBody {
 export interface CreateSubtaskBody {
   readonly title: string;
   readonly assigneeId?: string | null;
+}
+
+/**
+ * Reorders a subtask among its siblings, like a card on the board: name the subtask that should
+ * end up just before it, or just after it, or both. Omit both to move it to the end.
+ */
+export interface MoveSubtaskBody {
+  readonly afterId?: string | null;
+  readonly beforeId?: string | null;
 }
 
 export interface UpdateSubtaskBody {

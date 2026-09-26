@@ -2966,6 +2966,68 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspaceId}/tasks/{taskId}/subtasks/{subtaskId}/move": {
+      "post": {
+        "operationId": "Work_moveSubtask",
+        "parameters": [
+          {
+            "name": "taskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subtaskId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveSubtaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubtaskViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reorder a subtask among its siblings (drag and drop): name its new neighbours",
+        "tags": [
+          "work"
+        ]
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/tasks/{taskId}/comments": {
       "post": {
         "operationId": "Work_addComment",
@@ -3390,6 +3452,63 @@
           }
         ],
         "summary": "Redirect to a 5-minute download link (always an attachment, RFC 5987 name)",
+        "tags": [
+          "content"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/files/{attachmentId}/link": {
+      "get": {
+        "operationId": "Content_fileLink",
+        "parameters": [
+          {
+            "name": "attachmentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "disposition",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "attachment",
+              "type": "string",
+              "enum": [
+                "attachment",
+                "inline"
+              ]
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLinkDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A short-lived link as JSON: `inline` for images, audio and video (to show or play), else a download",
         "tags": [
           "content"
         ]
@@ -5005,6 +5124,87 @@
           }
         ],
         "summary": "Moves your read cursor forward (it never moves back)",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId}/task": {
+      "post": {
+        "operationId": "Chat_convertToTask",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "8–64 characters of [A-Za-z0-9_-], unique per intended operation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConvertMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The message already had a live task; it is returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvertMessageResultDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvertMessageResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "تبدیل پیام به وظیفه: a task linked to this message (one live task per message)",
         "tags": [
           "chat"
         ]
@@ -7341,6 +7541,62 @@
           "createdAt"
         ]
       },
+      "TaskSourceMessageDto": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accessible": {
+            "type": "boolean",
+            "description": "`false` when the caller cannot read the conversation; the other fields are then null"
+          },
+          "conversationId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "authorId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "excerpt": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 140
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "text",
+              "voice",
+              "file",
+              "system"
+            ]
+          },
+          "sentAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "messageId",
+          "accessible",
+          "conversationId",
+          "authorId",
+          "excerpt",
+          "kind",
+          "sentAt",
+          "deleted"
+        ]
+      },
       "TaskDetailDto": {
         "type": "object",
         "properties": {
@@ -7504,6 +7760,15 @@
                 "assign"
               ]
             }
+          },
+          "sourceMessage": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskSourceMessageDto"
+              }
+            ]
           }
         },
         "required": [
@@ -7539,7 +7804,8 @@
           "comments",
           "attachments",
           "timeline",
-          "myActions"
+          "myActions",
+          "sourceMessage"
         ]
       },
       "UpdateTaskDto": {
@@ -7711,6 +7977,23 @@
           }
         }
       },
+      "MoveSubtaskDto": {
+        "type": "object",
+        "properties": {
+          "afterId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The subtask that should end up just before this one"
+          },
+          "beforeId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The subtask that should end up just after this one"
+          }
+        }
+      },
       "CreateCommentDto": {
         "type": "object",
         "properties": {
@@ -7874,6 +8157,30 @@
             }
           }
         }
+      },
+      "FileLinkDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "attachment",
+              "inline"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "url",
+          "disposition",
+          "expiresAt"
+        ]
       },
       "NoteCategoryViewDto": {
         "type": "object",
@@ -9296,6 +9603,84 @@
         },
         "required": [
           "seq"
+        ]
+      },
+      "ConvertMessageDto": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "columnId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "urgent",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "assigneeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "dueDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attachmentIds": {
+            "description": "The message's own file; nothing else can be linked here",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "projectId",
+          "title"
+        ]
+      },
+      "ConvertMessageResultDto": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/TaskDetailDto"
+          },
+          "existing": {
+            "type": "boolean",
+            "description": "`true` when the message already had a live task, which is returned"
+          }
+        },
+        "required": [
+          "task",
+          "existing"
         ]
       },
       "MediaItemDto": {

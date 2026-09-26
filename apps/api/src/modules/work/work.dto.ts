@@ -25,6 +25,9 @@ import {
   type BoardView,
   type ColumnView,
   type CompleteTaskBody,
+  type FileLink,
+  type MoveSubtaskBody,
+  type TaskSourceMessage,
   type CreateColumnBody,
   type CreateCommentBody,
   type CreateLabelBody,
@@ -244,6 +247,23 @@ export class TaskEventViewDto implements TaskEventView {
   @ApiProperty({ format: 'date-time' }) readonly createdAt!: string;
 }
 
+export class TaskSourceMessageDto implements TaskSourceMessage {
+  @ApiProperty({ format: 'uuid' }) readonly messageId!: string;
+  @ApiProperty({ description: '`false` when the caller cannot read the conversation; the other fields are then null' }) readonly accessible!: boolean;
+  @ApiProperty({ type: String, nullable: true, format: 'uuid' }) readonly conversationId!: string | null;
+  @ApiProperty({ type: String, nullable: true, format: 'uuid' }) readonly authorId!: string | null;
+  @ApiProperty({ type: String, nullable: true, maxLength: 140 }) readonly excerpt!: string | null;
+  @ApiProperty({ type: String, nullable: true, enum: ['text', 'voice', 'file', 'system'] }) readonly kind!: TaskSourceMessage['kind'];
+  @ApiProperty({ type: String, nullable: true, format: 'date-time' }) readonly sentAt!: string | null;
+  @ApiProperty() readonly deleted!: boolean;
+}
+
+export class FileLinkDto implements FileLink {
+  @ApiProperty() readonly url!: string;
+  @ApiProperty({ enum: ['attachment', 'inline'] }) readonly disposition!: FileLink['disposition'];
+  @ApiProperty({ format: 'date-time' }) readonly expiresAt!: string;
+}
+
 export class TaskDetailDto extends TaskCardDto implements TaskDetail {
   @ApiProperty() readonly description!: string;
   @ApiProperty({ format: 'uuid' }) readonly createdById!: string;
@@ -253,6 +273,7 @@ export class TaskDetailDto extends TaskCardDto implements TaskDetail {
   @ApiProperty({ type: AttachmentViewDto, isArray: true }) readonly attachments!: AttachmentViewDto[];
   @ApiProperty({ type: TaskEventViewDto, isArray: true }) readonly timeline!: TaskEventViewDto[];
   @ApiProperty({ enum: PERMISSION_ACTION_IDS, isArray: true }) readonly myActions!: PermissionActionId[];
+  @ApiProperty({ type: TaskSourceMessageDto, nullable: true }) readonly sourceMessage!: TaskSourceMessageDto | null;
 }
 
 export class BoardViewDto implements BoardView {
@@ -343,6 +364,15 @@ export class CompleteTaskDto implements CompleteTaskBody {
 export class CreateSubtaskDto implements CreateSubtaskBody {
   @ApiProperty({ minLength: 1, maxLength: 200 }) @IsString() @Length(1, 200) readonly title!: string;
   @ApiPropertyOptional({ type: String, nullable: true, format: 'uuid' }) @OptionalNullableUuid() readonly assigneeId?: string | null;
+}
+
+export class MoveSubtaskDto implements MoveSubtaskBody {
+  @ApiPropertyOptional({ type: String, nullable: true, format: 'uuid', description: 'The subtask that should end up just before this one' })
+  @OptionalNullableUuid()
+  readonly afterId?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true, format: 'uuid', description: 'The subtask that should end up just after this one' })
+  @OptionalNullableUuid()
+  readonly beforeId?: string | null;
 }
 
 export class UpdateSubtaskDto implements UpdateSubtaskBody {

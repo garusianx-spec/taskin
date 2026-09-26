@@ -1,5 +1,6 @@
 import type { AvatarTone, ConversationKind } from '../domain.js';
-import type { AttachmentView } from './work.js';
+import type { TaskPriority } from '../domain.js';
+import type { AttachmentView, TaskDetail } from './work.js';
 
 /* ============================================================== conversations */
 
@@ -206,4 +207,29 @@ export interface MediaItem {
 export interface MediaPage {
   readonly items: readonly MediaItem[];
   readonly nextCursor: string | null;
+}
+
+/* ============================================================== message → task */
+
+/**
+ * «تبدیل پیام به وظیفه»: a task made from a message, linked to it for good. The title and the
+ * rest are the composer's; files can only be the message's own.
+ */
+export interface ConvertMessageBody {
+  readonly projectId: string;
+  readonly title: string;
+  readonly description?: string;
+  readonly columnId?: string | null;
+  readonly priority?: TaskPriority;
+  readonly assigneeIds?: readonly string[];
+  readonly dueDate?: string | null;
+  readonly subtasks?: readonly string[];
+  /** Must be the message's attachment; nothing else can be linked through this route. */
+  readonly attachmentIds?: readonly string[];
+}
+
+export interface ConvertMessageResult {
+  readonly task: TaskDetail;
+  /** `true` when the message already had a live task: that task is returned. */
+  readonly existing: boolean;
 }

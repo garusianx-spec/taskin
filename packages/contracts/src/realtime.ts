@@ -33,6 +33,8 @@ export interface RealtimeEventMap {
   'message:new': MessageView;
   'message:updated': MessageView;
   'message:deleted': { readonly conversationId: string; readonly messageId: string; readonly seq: number };
+  /** A message became a task. Only the code travels: not every member can see the project. */
+  'message:task_linked': { readonly conversationId: string; readonly messageId: string; readonly taskId: string; readonly code: string };
   'reaction:updated': { readonly conversationId: string; readonly messageId: string } & ReactionView;
   /** Coalesced: at most one per member and conversation per second. */
   'read:updated': {

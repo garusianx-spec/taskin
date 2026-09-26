@@ -6,6 +6,7 @@ import type {
   CreateCommentBody,
   CreateSubtaskBody,
   CreateTaskBody,
+  MoveSubtaskBody,
   MoveTaskBody,
   PermissionActionId,
   SubtaskView,
@@ -14,6 +15,7 @@ import type {
   TaskDetail,
   TaskPage,
   TaskPreview,
+  TaskSourceMessage,
   TaskStatus,
   UpdateSubtaskBody,
   UpdateTaskBody,
@@ -42,6 +44,7 @@ import { type Unit, UnitOfWork } from '../../platform/db/unit-of-work.js';
 import { ApiError } from '../../platform/http/api-error.js';
 import type { MembershipContext } from '../../platform/http/request.js';
 import { OutboxWriter } from '../../platform/outbox/outbox-writer.js';
+import { messageGrant, publicChannelVisible } from '../chat/chat-access.js';
 import { projectActions } from '../rbac/ability.js';
 import { AccessService, assertAction, type ProjectAccess, type ProjectRow } from './access.js';
 import { BoardService } from './board.service.js';
@@ -57,6 +60,7 @@ import {
   ganttQuery,
   type ListFilter,
   listQuery,
+  type SourceMessageRow,
   nextCursor,
   toCard,
   toColumns,
@@ -65,9 +69,15 @@ import {
 type TaskRow = typeof tasks.$inferSelect;
 type ColumnRow = typeof boardColumns.$inferSelect;
 
-/** Extras for tasks created from something else (a note today, a chat message in M4). */
+/** Extras for tasks created from something else: a note, or a chat message. */
 export interface TaskOrigin {
   readonly sourceNoteId?: string;
+  readonly sourceMessageId?: string;
+  /**
+   * Files of the source message, linked whoever uploaded them. The caller has already checked
+   * that they belong to the message; `attachmentIds` in the body stay limited to one's own uploads.
+   */
+  readonly sourceAttachmentIds?: readonly string[];
 }
 
 const EXCERPT = 140;
@@ -117,7 +127,7 @@ export class TasksService {
     const row = result.rows[0];
     const actions = row ? projectActions(member, { visibility: row.project_visibility, role: row.my_role }) : [];
     if (!row || !actions.includes('view')) throw ApiError.notFound('The task');
-    return toDetail(row, actions);
+    return toDetail(row, actions, member);
   }
 
   /** What a chat member may know about a linked task: the code always, the rest only with access. */
@@ -185,6 +195,7 @@ export class TasksService {
         dueDate: body.dueDate ?? null,
         completedAt: done ? sql`now()` : null,
         sourceNoteId: origin.sourceNoteId ?? null,
+        sourceMessageId: origin.sourceMessageId ?? null,
         createdBy: member.userId,
         searchText: normaliseForSearch(`${code} ${title} ${description}`),
       })
@@ -201,8 +212,14 @@ export class TasksService {
       await tx.insert(subtasks).values(titles.map((entry, index) => ({ workspaceId: member.workspaceId, taskId: task.id, title: entry, position: keys[index] ?? '' })));
     }
     for (const attachmentId of new Set(body.attachmentIds ?? [])) await this.linkFile(tx, member, task.id, attachmentId);
+    for (const attachmentId of new Set(origin.sourceAttachmentIds ?? [])) await this.linkSourceFile(tx, member, task.id, attachmentId);
 
-    await this.event(tx, member, task.id, 'created', { code, columnId: column.id, ...(origin.sourceNoteId ? { sourceNoteId: origin.sourceNoteId } : {}) });
+    await this.event(tx, member, task.id, 'created', {
+      code,
+      columnId: column.id,
+      ...(origin.sourceNoteId ? { sourceNoteId: origin.sourceNoteId } : {}),
+      ...(origin.sourceMessageId ? { sourceMessageId: origin.sourceMessageId } : {}),
+    });
     await this.audit.write(tx, {
       action: 'task.create',
       workspaceId: member.workspaceId,
@@ -387,7 +404,7 @@ export class TasksService {
 
   async addSubtask(member: MembershipContext, taskId: string, body: CreateSubtaskBody): Promise<SubtaskView> {
     return this.uow.run(this.scope(member), async ({ tx }) => {
-      const { access } = await this.peekTask(tx, member, taskId);
+      const { task, access } = await this.peekTask(tx, member, taskId);
       assertAction(access.actions, 'edit');
       if (body.assigneeId) {
         assertAction(access.actions, 'assign');
@@ -401,13 +418,14 @@ export class TasksService {
       if (!row) throw new Error('subtask insert returned nothing');
       await this.event(tx, member, taskId, 'subtask.added', { subtaskId: row.id, title: row.title });
       await this.audit.write(tx, { action: 'task.subtask.create', workspaceId: member.workspaceId, resourceType: 'task', resourceId: taskId, changes: { after: { subtaskId: row.id, title: row.title } } });
+      await this.subtasksChanged(tx, member, task);
       return subtaskView(row);
     });
   }
 
   async updateSubtask(member: MembershipContext, taskId: string, subtaskId: string, body: UpdateSubtaskBody): Promise<SubtaskView> {
     return this.uow.run(this.scope(member), async ({ tx }) => {
-      const { access } = await this.peekTask(tx, member, taskId);
+      const { task, access } = await this.peekTask(tx, member, taskId);
       assertAction(access.actions, 'edit');
       if (body.assigneeId !== undefined) {
         assertAction(access.actions, 'assign');
@@ -425,13 +443,14 @@ export class TasksService {
       if (!row) throw ApiError.notFound('The subtask');
       if (body.done !== undefined) await this.event(tx, member, taskId, body.done ? 'subtask.completed' : 'subtask.reopened', { subtaskId, title: row.title });
       await this.audit.write(tx, { action: 'task.subtask.update', workspaceId: member.workspaceId, resourceType: 'task', resourceId: taskId, changes: { subtaskId, after: body } });
+      await this.subtasksChanged(tx, member, task);
       return subtaskView(row);
     });
   }
 
   async removeSubtask(member: MembershipContext, taskId: string, subtaskId: string): Promise<void> {
     await this.uow.run(this.scope(member), async ({ tx }) => {
-      const { access } = await this.peekTask(tx, member, taskId);
+      const { task, access } = await this.peekTask(tx, member, taskId);
       assertAction(access.actions, 'edit');
       const deleted = await tx
         .delete(subtasks)
@@ -439,6 +458,81 @@ export class TasksService {
         .returning({ title: subtasks.title });
       if (deleted.length === 0) throw ApiError.notFound('The subtask');
       await this.audit.write(tx, { action: 'task.subtask.delete', workspaceId: member.workspaceId, resourceType: 'task', resourceId: taskId, changes: { subtaskId, before: deleted[0] } });
+      await this.subtasksChanged(tx, member, task);
+    });
+  }
+
+  /**
+   * Reorders a subtask the way the board orders cards: the new key lies between the named
+   * neighbours. Names that are not (or no longer) siblings, or that are not next to each other,
+   * mean the client's list is stale: 409 SUBTASKS_CHANGED. The task's subtasks are locked for the
+   * change, so two reorders of one list queue instead of interleaving; keys that grew too long are
+   * rewritten for the whole list.
+   */
+  async moveSubtask(member: MembershipContext, taskId: string, subtaskId: string, body: MoveSubtaskBody): Promise<SubtaskView> {
+    return this.uow.run(this.scope(member), async ({ tx }) => {
+      const { task, access } = await this.peekTask(tx, member, taskId);
+      assertAction(access.actions, 'edit');
+      const siblings = await tx
+        .select({ id: subtasks.id, position: subtasks.position })
+        .from(subtasks)
+        .where(and(eq(subtasks.workspaceId, member.workspaceId), eq(subtasks.taskId, taskId)))
+        .orderBy(asc(subtasks.position), asc(subtasks.id))
+        .for('update');
+      if (!siblings.some((entry) => entry.id === subtaskId)) throw ApiError.notFound('The subtask');
+      const others = siblings.filter((entry) => entry.id !== subtaskId);
+      const indexOf = (id: string | null | undefined): number | null => {
+        if (!id) return null;
+        const index = others.findIndex((entry) => entry.id === id);
+        if (index === -1) throw new ApiError('SUBTASKS_CHANGED', 'A neighbouring subtask is gone; reload the task.');
+        return index;
+      };
+      const after = indexOf(body.afterId);
+      const before = indexOf(body.beforeId);
+      if (after !== null && before !== null && before !== after + 1) throw new ApiError('SUBTASKS_CHANGED', 'The named subtasks are no longer next to each other.');
+      // The slot in the list without the moving subtask: after `after`, before `before`, or the end.
+      const slot = after !== null ? after + 1 : before !== null ? before : others.length;
+      const previous = others[slot - 1]?.position ?? null;
+      const next = others[slot]?.position ?? null;
+
+      let position: string | null = null;
+      if (previous === null || next === null || previous < next) {
+        try {
+          position = keyBetween(previous, next);
+        } catch {
+          position = null;
+        }
+      }
+      if (position === null || position.length > REBALANCE_KEY_LENGTH) {
+        const order = [...others.slice(0, slot).map((entry) => entry.id), subtaskId, ...others.slice(slot).map((entry) => entry.id)];
+        const keys = keysBetween(null, null, order.length);
+        await tx.execute(sql`
+          update subtasks s set position = m.position
+          from unnest(${sql.param(order)}::uuid[], ${sql.param(keys)}::text[]) as m(id, position)
+          where s.workspace_id = ${member.workspaceId} and s.task_id = ${taskId} and s.id = m.id`);
+        position = keys[slot] ?? '';
+      } else {
+        await tx.update(subtasks).set({ position }).where(and(eq(subtasks.workspaceId, member.workspaceId), eq(subtasks.id, subtaskId)));
+      }
+      const [row] = await tx.select().from(subtasks).where(and(eq(subtasks.workspaceId, member.workspaceId), eq(subtasks.id, subtaskId)));
+      if (!row) throw ApiError.notFound('The subtask');
+      await this.audit.write(tx, { action: 'task.subtask.move', workspaceId: member.workspaceId, resourceType: 'task', resourceId: taskId, changes: { subtaskId, after: { position, index: slot } } });
+      await this.subtasksChanged(tx, member, task);
+      return subtaskView(row);
+    });
+  }
+
+  /**
+   * Tells the task's viewers its checklist changed. Subtasks do not bump the task's version (a
+   * checkbox must not make a concurrent title edit stale), so clients refetch on `subtasks`.
+   */
+  private async subtasksChanged(tx: Tx, member: MembershipContext, task: TaskRow): Promise<void> {
+    await this.outbox.add(tx, {
+      type: 'task.updated',
+      aggregateType: 'task',
+      aggregateId: task.id,
+      workspaceId: member.workspaceId,
+      payload: { taskId: task.id, projectId: task.projectId, version: task.version, fields: ['subtasks'] },
     });
   }
 
@@ -755,6 +849,16 @@ export class TasksService {
     return file.fileName;
   }
 
+  /** Links a file of the task's source message (already checked to be that message's). */
+  private async linkSourceFile(tx: Tx, member: MembershipContext, taskId: string, attachmentId: string): Promise<void> {
+    const [file] = await tx
+      .select({ status: attachments.status })
+      .from(attachments)
+      .where(and(eq(attachments.workspaceId, member.workspaceId), eq(attachments.id, attachmentId), isNull(attachments.deletedAt)));
+    if (!file || !['scanning', 'ready'].includes(file.status)) throw ApiError.validation([{ field: 'attachmentIds', message: 'the file is not available' }]);
+    await tx.insert(taskAttachments).values({ workspaceId: member.workspaceId, taskId, attachmentId, addedBy: member.userId }).onConflictDoNothing();
+  }
+
   private async event(tx: Tx, member: MembershipContext, taskId: string, type: string, payload: Record<string, unknown>): Promise<void> {
     await tx.insert(taskEvents).values({ workspaceId: member.workspaceId, taskId, actorId: member.userId, type, payload });
   }
@@ -776,7 +880,7 @@ export function commentView(row: typeof taskComments.$inferSelect): TaskCommentV
   return { id: row.id, authorId: row.authorId, body: row.body, replyToId: row.replyToId, createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null };
 }
 
-export function toDetail(row: DetailRow, actions: readonly PermissionActionId[]): TaskDetail {
+export function toDetail(row: DetailRow, actions: readonly PermissionActionId[], member: MembershipContext): TaskDetail {
   return {
     ...toCard(row),
     description: row.description,
@@ -787,6 +891,30 @@ export function toDetail(row: DetailRow, actions: readonly PermissionActionId[])
     attachments: (row.attachments ?? []).map((file) => ({ ...file, size: Number(file.size), uploadedAt: iso(file.uploadedAt) })),
     timeline: (row.timeline ?? []).map((entry) => ({ ...entry, createdAt: iso(entry.createdAt) })),
     myActions: actions,
+    sourceMessage: sourceMessageView(row.source_message, member),
+  };
+}
+
+/**
+ * Anyone who sees the task learns it came from a message; where and what only reaches people who
+ * can read that conversation (its members, or anyone for a public channel they may browse).
+ */
+export function sourceMessageView(row: SourceMessageRow | null, member: MembershipContext): TaskSourceMessage | null {
+  if (!row) return null;
+  const readable =
+    messageGrant(member, 'view') && (row.isMember || (row.conversationKind === 'channel' && !row.isPrivate && publicChannelVisible(member)));
+  if (!readable) {
+    return { messageId: row.messageId, accessible: false, conversationId: null, authorId: null, excerpt: null, kind: null, sentAt: null, deleted: row.deleted };
+  }
+  return {
+    messageId: row.messageId,
+    accessible: true,
+    conversationId: row.conversationId,
+    authorId: row.authorId,
+    excerpt: row.deleted ? null : row.text,
+    kind: row.kind,
+    sentAt: iso(row.sentAt),
+    deleted: row.deleted,
   };
 }
 

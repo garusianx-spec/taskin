@@ -81,16 +81,23 @@ export class StorageService implements OnModuleDestroy {
   }
 
   /**
-   * A short-lived download link. The file always downloads (`attachment`), with its name in
-   * RFC 5987 form so Persian names survive, and with the sniffed type.
+   * A short-lived link. Named files download (`attachment`) unless the caller vetted them for
+   * showing in place (`inline`: sniffed images, audio and video); the name is in RFC 5987 form so
+   * Persian names survive, and the type is the sniffed one.
    */
-  async presignGet(key: string, expiresInSeconds: number, downloadName?: string, contentType?: string): Promise<string> {
+  async presignGet(
+    key: string,
+    expiresInSeconds: number,
+    downloadName?: string,
+    contentType?: string,
+    disposition: 'attachment' | 'inline' = 'attachment',
+  ): Promise<string> {
     return getSignedUrl(
       this.signer,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        ResponseContentDisposition: downloadName ? `attachment; filename*=UTF-8''${encodeRfc5987(downloadName)}` : undefined,
+        ResponseContentDisposition: downloadName ? `${disposition}; filename*=UTF-8''${encodeRfc5987(downloadName)}` : undefined,
         ResponseContentType: contentType,
       }),
       { expiresIn: expiresInSeconds },

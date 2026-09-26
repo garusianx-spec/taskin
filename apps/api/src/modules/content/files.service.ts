@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import type { AttachmentView, CompleteUploadBody, CreateUploadBody, UploadPlan, UploadView } from '@taskin/contracts';
+import type { AttachmentView, CompleteUploadBody, CreateUploadBody, FileLink, UploadPlan, UploadView } from '@taskin/contracts';
 import { AuditWriter } from '../../platform/audit/audit-writer.js';
 import type { Tx } from '../../platform/db/database.js';
 import { attachments, plans, workspaces } from '../../platform/db/schema/all.js';
@@ -11,6 +11,7 @@ import type { MembershipContext } from '../../platform/http/request.js';
 import { OutboxWriter } from '../../platform/outbox/outbox-writer.js';
 import { RedisClients } from '../../platform/redis/redis.js';
 import { StorageService } from '../../platform/storage/storage.js';
+import { messageGrant, publicChannelVisible } from '../chat/chat-access.js';
 import { AbilityFactory, projectActions } from '../rbac/ability.js';
 import { cleanFileName, isSpoofed, kindOfMime, sniff } from './file-types.js';
 
@@ -22,8 +23,13 @@ export const SINGLE_POST_MAX_BYTES = 16 * 1024 * 1024;
 export const PART_BYTES = 8 * 1024 * 1024;
 const UPLOAD_TTL_SECONDS = 3600;
 const DOWNLOAD_TTL_SECONDS = 300;
+/** Inline links feed `<img>`, `<audio>` and `<video>`, which may keep reading (seeking) for a while. */
+const INLINE_TTL_SECONDS = 900;
 const UPLOADS_PER_HOUR = 60;
-const SNIFF_BYTES = 64;
+/** Enough to see a WebM's track list (a voice note is audio-only WebM). */
+const SNIFF_BYTES = 4096;
+/** Kinds the browser may show in place. Their types were sniffed from the bytes: no SVG, no HTML. */
+const INLINE_KINDS = new Set<string>(['image', 'audio', 'video']);
 
 export function attachmentView(row: AttachmentRow): AttachmentView {
   return {
@@ -179,11 +185,18 @@ export class FilesService {
     await this.release(member, row, 'deleted', 'aborted');
   }
 
-  /**
-   * A 5-minute link to a ready file for someone who may see it: its uploader, or anyone who can
-   * see a task it is attached to.
-   */
+  /** A 5-minute download link (the redirect route). */
   async downloadUrl(member: MembershipContext, attachmentId: string): Promise<string> {
+    return (await this.link(member, attachmentId, 'attachment')).url;
+  }
+
+  /**
+   * A short-lived link to a ready file, for someone who may see it: its uploader, anyone who can
+   * see a task it is attached to, and anyone who can read a conversation it was sent in.
+   * `inline` (images, audio, video) lets the page show or play it; everything else downloads.
+   * Downloads are audited; inline views (thumbnails, playback) are not.
+   */
+  async link(member: MembershipContext, attachmentId: string, wanted: FileLink['disposition']): Promise<FileLink> {
     if (!this.abilities.forMember(member).can('view', 'File')) throw ApiError.forbidden();
     const row = await this.uow.run({ workspaceId: member.workspaceId, userId: member.userId }, async ({ tx }) => {
       const [file] = await tx
@@ -191,11 +204,18 @@ export class FilesService {
         .from(attachments)
         .where(and(eq(attachments.workspaceId, member.workspaceId), eq(attachments.id, attachmentId), sql`${attachments.deletedAt} is null`));
       if (!file || file.status !== 'ready') throw ApiError.notFound('The file');
-      if (file.uploaderId !== member.userId && !(await this.visibleThroughTask(tx, member, attachmentId))) throw ApiError.notFound('The file');
-      await this.audit.write(tx, { action: 'file.download', workspaceId: member.workspaceId, resourceType: 'attachment', resourceId: attachmentId });
+      const readable =
+        file.uploaderId === member.userId || (await this.visibleThroughTask(tx, member, attachmentId)) || (await this.visibleThroughMessage(tx, member, attachmentId));
+      if (!readable) throw ApiError.notFound('The file');
+      if (wanted === 'attachment' || !INLINE_KINDS.has(file.kind)) {
+        await this.audit.write(tx, { action: 'file.download', workspaceId: member.workspaceId, resourceType: 'attachment', resourceId: attachmentId });
+      }
       return file;
     });
-    return this.storage.presignGet(row.objectKey, DOWNLOAD_TTL_SECONDS, row.fileName, row.mimeType);
+    const disposition = wanted === 'inline' && INLINE_KINDS.has(row.kind) ? 'inline' : 'attachment';
+    const ttl = disposition === 'inline' ? INLINE_TTL_SECONDS : DOWNLOAD_TTL_SECONDS;
+    const url = await this.storage.presignGet(row.objectKey, ttl, row.fileName, row.mimeType, disposition);
+    return { url, disposition, expiresAt: new Date(Date.now() + ttl * 1000).toISOString() };
   }
 
   /** Worker: the virus-scan step. The development scanner accepts everything; ClamAV plugs in here. */
@@ -304,6 +324,20 @@ export class FilesService {
         changes: { reason },
       });
     });
+  }
+
+  /** Sent in a live message of a conversation the caller can read (a member, or a public channel). */
+  private async visibleThroughMessage(tx: Tx, member: MembershipContext, attachmentId: string): Promise<boolean> {
+    if (!messageGrant(member, 'view')) return false;
+    const result = await tx.execute<{ kind: string; is_private: boolean; is_member: boolean }>(sql`
+      select c.kind, c.is_private,
+             exists (select 1 from conversation_members cm
+                     where cm.workspace_id = m.workspace_id and cm.conversation_id = m.conversation_id
+                       and cm.user_id = ${member.userId} and cm.left_at is null) as is_member
+      from messages m
+      join conversations c on c.workspace_id = m.workspace_id and c.id = m.conversation_id
+      where m.workspace_id = ${member.workspaceId} and m.attachment_id = ${attachmentId} and m.deleted_at is null`);
+    return result.rows.some((row) => row.is_member || (row.kind === 'channel' && !row.is_private && publicChannelVisible(member)));
   }
 
   private async visibleThroughTask(tx: Tx, member: MembershipContext, attachmentId: string): Promise<boolean> {
