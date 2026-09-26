@@ -169,6 +169,18 @@ export interface Task {
    * back on uncheck. `null` whenever the task is not done, or was created done.
    */
   readonly reopenTo: TaskPlacement | null;
+  /**
+   * Counts from a list page, set while the arrays above are not loaded yet (a card knows how many
+   * subtasks it has before its detail is fetched). Absent when the arrays are complete.
+   */
+  readonly summary?: TaskSummary;
+}
+
+export interface TaskSummary {
+  readonly subtasks: number;
+  readonly subtasksDone: number;
+  readonly comments: number;
+  readonly attachments: number;
 }
 
 /** A task's position on the board: its workflow status plus an optional custom column. */
