@@ -1,7 +1,9 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { toPersianDigits } from '@taskin/jalali';
 import { cn } from '@/lib/cn';
+import { type Recorded, useVoiceRecorder } from '@/hooks/useVoiceRecorder';
 import { IconButton, Tooltip } from '@/components/ui';
 import { CloseIcon, EmojiIcon, MicrophoneIcon, PaperclipIcon, SendIcon } from '@/components/icons';
 
@@ -12,7 +14,13 @@ export interface ChatComposerProps {
   readonly conversationTitle: string;
   /** The draft became non-empty (`true`, repeated while typing) or empty again (`false`). */
   readonly onTyping?: (active: boolean) => void;
+  /** Files picked with the paperclip, sent one message each. */
+  readonly onAttach?: (files: readonly File[]) => void;
+  /** A voice note recorded with the microphone button. */
+  readonly onVoice?: (recording: Recorded) => void;
 }
+
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
 const EMOJI_PALETTE = ['👍', '🙏', '🔥', '✅', '👀', '🎉', '❤️', '😀', '🤝', '⚡️'] as const;
 
@@ -20,10 +28,29 @@ const EMOJI_PALETTE = ['👍', '🙏', '🔥', '✅', '👀', '🎉', '❤️', 
  * Message composer. Enter sends, Shift+Enter inserts a newline, and the textarea grows with
  * the content up to six lines before scrolling.
  */
-export function ChatComposer({ onSend, replyPreview, onCancelReply, conversationTitle, onTyping }: ChatComposerProps) {
+export function ChatComposer({ onSend, replyPreview, onCancelReply, conversationTitle, onTyping, onAttach, onVoice }: ChatComposerProps) {
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const recorder = useVoiceRecorder();
+  const recording = recorder.state.phase === 'recording' ? recorder.state : null;
+
+  const pickFiles = (list: FileList | null) => {
+    const files = [...(list ?? [])];
+    if (files.length === 0 || !onAttach) return;
+    const tooBig = files.filter((file) => file.size > MAX_FILE_BYTES);
+    setFileError(tooBig.length > 0 ? `حجم هر فایل باید کمتر از ${toPersianDigits(100)} مگابایت باشد.` : null);
+    const accepted = files.filter((file) => file.size > 0 && file.size <= MAX_FILE_BYTES);
+    if (accepted.length > 0) onAttach(accepted);
+  };
+
+  const finishRecording = async () => {
+    const recorded = await recorder.stop();
+    if (recorded && onVoice) onVoice(recorded);
+    else if (!recorded) setFileError('پیام صوتی باید دست‌کم یک ثانیه باشد.');
+  };
 
   const resize = (element: HTMLTextAreaElement) => {
     element.style.height = 'auto';
@@ -100,8 +127,21 @@ export function ChatComposer({ onSend, replyPreview, onCancelReply, conversation
         </div>
 
         <Tooltip content="پیوست فایل">
-          <IconButton label="پیوست فایل" icon={<PaperclipIcon size={20} />} size="sm" />
+          <IconButton label="پیوست فایل" icon={<PaperclipIcon size={20} />} size="sm" onClick={() => fileRef.current?.click()} disabled={recording !== null} />
         </Tooltip>
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          className="sr-only"
+          tabIndex={-1}
+          aria-label="انتخاب فایل برای پیوست"
+          data-testid="chat-file-input"
+          onChange={(event) => {
+            pickFiles(event.target.files);
+            event.target.value = '';
+          }}
+        />
 
         <label className="sr-only" htmlFor="chat-composer-input">
           {`نوشتن پیام در ${conversationTitle}`}
@@ -109,7 +149,18 @@ export function ChatComposer({ onSend, replyPreview, onCancelReply, conversation
         <span id="chat-composer-hint" className="sr-only">
           برای ارسال، کلید Enter و برای رفتن به خط جدید، Shift به همراه Enter را بزنید.
         </span>
+        {recording && (
+          <div role="status" aria-live="polite" className="flex min-h-9 flex-1 items-center gap-2 px-1 text-body-sm text-fg-secondary">
+            <span className="size-2.5 animate-pulse rounded-full bg-status-blocked" aria-hidden="true" />
+            <span className="numeric font-medium">{`در حال ضبط ${toPersianDigits(Math.floor(recording.seconds / 60))}:${toPersianDigits(String(recording.seconds % 60).padStart(2, '0'))}`}</span>
+            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunken" aria-hidden="true">
+              <span className="block h-full rounded-full bg-brand-solid transition-[width] duration-75" style={{ width: `${Math.min(100, Math.round(recording.level * 300))}%` }} />
+            </span>
+            <IconButton label="لغو ضبط" icon={<CloseIcon size={18} />} size="xs" onClick={recorder.cancel} />
+          </div>
+        )}
         <textarea
+          hidden={recording !== null}
           id="chat-composer-input"
           ref={textareaRef}
           rows={1}
@@ -130,20 +181,39 @@ export function ChatComposer({ onSend, replyPreview, onCancelReply, conversation
           className="max-h-36 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-body-sm leading-6 text-fg-primary outline-none placeholder:text-fg-placeholder"
         />
 
-        <Tooltip content="ضبط پیام صوتی">
-          <IconButton label="ضبط پیام صوتی" icon={<MicrophoneIcon size={20} />} size="sm" />
-        </Tooltip>
+        {!recording && (
+          <Tooltip content="ضبط پیام صوتی">
+            <IconButton
+              label="ضبط پیام صوتی"
+              icon={<MicrophoneIcon size={20} />}
+              size="sm"
+              onClick={() => {
+                setFileError(null);
+                if (onVoice) void recorder.start();
+              }}
+            />
+          </Tooltip>
+        )}
 
-        <IconButton
-          label="ارسال پیام"
-          icon={<SendIcon size={20} />}
-          size="sm"
-          variant="primary"
-          onClick={submit}
-          disabled={draft.trim().length === 0}
-          className={cn(draft.trim().length === 0 && 'opacity-50')}
-        />
+        {recording ? (
+          <IconButton label="ارسال پیام صوتی" icon={<SendIcon size={20} />} size="sm" variant="primary" onClick={() => void finishRecording()} />
+        ) : (
+          <IconButton
+            label="ارسال پیام"
+            icon={<SendIcon size={20} />}
+            size="sm"
+            variant="primary"
+            onClick={submit}
+            disabled={draft.trim().length === 0}
+            className={cn(draft.trim().length === 0 && 'opacity-50')}
+          />
+        )}
       </div>
+      {(fileError || recorder.state.phase === 'error') && (
+        <p role="alert" className="mt-1.5 px-1 text-caption text-status-blocked">
+          {recorder.state.phase === 'error' ? recorder.state.message : fileError}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,14 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useWorkspace } from '@/store/WorkspaceProvider';
-import { conversationById, taskById } from '@/store/selectors';
+import { useLive, useWorkspace } from '@/store/WorkspaceProvider';
+import { conversationById, messagePreview, taskById, userById } from '@/store/selectors';
+import { nextLocalId } from '@/store/ids';
 import { NavRail } from './NavRail';
 import { TopAppBar } from './TopAppBar';
 import { BottomNav } from './BottomNav';
 import { Drawer } from '@/components/ui';
-import { TaskInspector } from '@/components/tasks/TaskInspector';
+import { TaskInspector, type TaskSourceView } from '@/components/tasks/TaskInspector';
 import { ConversationInspector } from '@/components/chat/ConversationInspector';
 
 export interface AppShellProps {
@@ -51,6 +52,25 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
   const inspectorOpen = Boolean(inspectorTask ?? inspectorConversation);
 
   const closeInspector = useCallback(() => dispatch({ type: 'close-inspector' }), [dispatch]);
+  // The chat message the inspected task came from: from the loaded history, else as the server described it.
+  const sourceMessage = inspectorTask?.sourceMessageId ? state.messages.find((message) => message.id === inspectorTask.sourceMessageId) : undefined;
+  const sourceRef = inspectorTask?.sourceMessage;
+  const sourceConversationId = sourceMessage?.conversationId ?? sourceRef?.conversationId ?? null;
+  const sourceAuthorId = sourceMessage?.authorId ?? sourceRef?.authorId ?? null;
+  const taskSource: TaskSourceView | null = inspectorTask?.sourceMessageId
+    ? {
+        accessible: sourceMessage !== undefined || (sourceRef?.accessible ?? false),
+        excerpt: sourceMessage ? messagePreview(sourceMessage) : (sourceRef?.excerpt ?? null),
+        authorName: sourceAuthorId ? (userById(sourceAuthorId)?.fullName ?? null) : null,
+        conversationTitle: sourceConversationId ? (conversationById(state.conversations, sourceConversationId)?.title ?? null) : null,
+        // A deleted message shows as a system line ("این پیام حذف شد.") once history is loaded.
+        deleted: (sourceRef?.deleted ?? false) || sourceMessage?.body.kind === 'system',
+      }
+    : null;
+  const live = useLive();
+  const liveStore = live?.store ?? null;
+  const sharedId = inspectorConversation?.id ?? null;
+  const loadShared = useMemo(() => (liveStore && sharedId ? () => liveStore.sharedMedia(sharedId) : undefined), [liveStore, sharedId]);
 
   if (signedOut) return null;
 
@@ -129,6 +149,21 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
                   replyToId,
                 })
               }
+              onAttachFiles={(files) =>
+                dispatch({
+                  type: 'attach-task-files',
+                  taskId: inspectorTask.id,
+                  authorId: currentUser.id,
+                  files: files.map((file) => ({ attachmentId: nextLocalId('att'), file, name: file.name, previewUrl: URL.createObjectURL(file) })),
+                })
+              }
+              onRemoveAttachment={(attachmentId) => dispatch({ type: 'remove-task-attachment', taskId: inspectorTask.id, attachmentId })}
+              source={taskSource}
+              onOpenSource={() => {
+                if (!sourceConversationId || !inspectorTask.sourceMessageId) return;
+                dispatch({ type: 'focus-message', conversationId: sourceConversationId, messageId: inspectorTask.sourceMessageId });
+                if (!pathname.startsWith('/chats')) router.push('/chats');
+              }}
             />
           )}
 
@@ -145,6 +180,7 @@ export function AppShell({ sidebar, children, mobileShowsDetail = false }: AppSh
                 dispatch({ type: 'toggle-conversation-mute', conversationId: inspectorConversation.id })
               }
               onClose={closeInspector}
+              {...(loadShared ? { loadShared } : {})}
             />
           )}
         </Drawer>

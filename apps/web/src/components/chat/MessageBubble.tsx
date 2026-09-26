@@ -5,10 +5,11 @@ import type { Attachment, Message, User } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
 import { QUICK_REACTIONS } from '@/data/reference';
 import { downloadAttachment } from '@/lib/download';
+import { useFileUrl } from '@/store/files';
 import { formatCount, formatFileSize } from '@/lib/format';
 import { Avatar, Badge, ClockTime, IconButton, Popover, Tooltip } from '@/components/ui';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
-import { VoicePlayer } from './VoicePlayer';
+import { StoredVoicePlayer } from './VoicePlayer';
 import {
   ConvertToTaskIcon,
   CopyIcon,
@@ -55,15 +56,7 @@ export function MessageBubble({
   const [menuOpen, setMenuOpen] = useState(false);
   const longPressTimer = useRef<number | null>(null);
 
-  if (message.body.kind === 'system') {
-    return (
-      <div className="flex justify-center py-2">
-        <span className="rounded-full bg-sunken px-3 py-1 text-micro text-fg-tertiary">
-          {message.body.text}
-        </span>
-      </div>
-    );
-  }
+  if (message.body.kind === 'system') return <SystemLine text={message.body.text} />;
 
   const startLongPress = () => {
     longPressTimer.current = window.setTimeout(() => onLongPress(message), 500);
@@ -129,10 +122,11 @@ export function MessageBubble({
             )}
 
             {message.body.kind === 'voice' && (
-              <VoicePlayer
+              <StoredVoicePlayer
                 durationSec={message.body.durationSec}
                 waveform={message.body.waveform}
                 src={message.body.src}
+                attachmentId={message.body.attachmentId ?? null}
                 outgoing={outgoing}
                 label={`پیام صوتی ${author.fullName}`}
               />
@@ -315,6 +309,15 @@ export function MessageBubble({
   );
 }
 
+/** A line the system wrote into the conversation (a group created, a message turned into a task). */
+export function SystemLine({ text }: { readonly text: string }) {
+  return (
+    <div className="flex justify-center py-2">
+      <span className="rounded-full bg-sunken px-3 py-1 text-micro text-fg-tertiary">{text}</span>
+    </div>
+  );
+}
+
 interface FileCardProps {
   readonly attachment: Attachment;
   readonly caption: string | null;
@@ -350,16 +353,26 @@ function FileCard({ attachment, caption, outgoing }: FileCardProps) {
           label={`دانلود ${attachment.name}`}
           icon={<DownloadIcon size={16} />}
           size="xs"
-          onClick={() => downloadAttachment(attachment)}
+          onClick={() => void downloadAttachment(attachment)}
           className={outgoing ? 'text-fg-on-brand hover:bg-white/20' : undefined}
         />
       </div>
       {caption && <p className="text-body-sm leading-6">{caption}</p>}
-      {attachment.kind === 'image' && (
-        <Badge tone={outgoing ? 'neutral' : 'brand'} size="sm">
-          پیش‌نمایش در مخزن پروژه
-        </Badge>
-      )}
+      {attachment.kind === 'image' && <ImagePreview attachment={attachment} outgoing={outgoing} />}
     </div>
   );
+}
+
+/** The picture itself once there is a link to it; the demo's fixtures (no bytes) keep a badge. */
+function ImagePreview({ attachment, outgoing }: { readonly attachment: Attachment; readonly outgoing: boolean }) {
+  const url = useFileUrl(attachment, 'inline');
+  if (!url) {
+    return (
+      <Badge tone={outgoing ? 'neutral' : 'brand'} size="sm">
+        پیش‌نمایش در مخزن پروژه
+      </Badge>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element -- a signed, short-lived link to an upload
+  return <img src={url} alt={attachment.name} loading="lazy" className="max-h-56 w-56 rounded-lg object-cover sm:w-64" />;
 }

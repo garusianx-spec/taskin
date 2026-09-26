@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Recorded } from '@/hooks/useVoiceRecorder';
 import { useIsomorphicLayoutEffect } from '@/hooks/useIsomorphicLayoutEffect';
 import type { Conversation, Message, TaskDraft } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
@@ -17,7 +18,7 @@ import {
 } from '@/store/selectors';
 import { taskDraft } from '@/store/drafts';
 import { AvatarStack, Badge, EmptyState, IconButton, Input, Tooltip } from '@/components/ui';
-import { MessageBubble } from './MessageBubble';
+import { MessageBubble, SystemLine } from './MessageBubble';
 import { ChatComposer } from './ChatComposer';
 import { MessageActionSheet } from './MessageActionSheet';
 import {
@@ -43,7 +44,14 @@ export interface ChatViewProps {
   /** Who else is typing in this conversation right now (live only). */
   readonly typingNames?: readonly string[];
   readonly onTyping?: (active: boolean) => void;
+  readonly onAttach?: (files: readonly File[]) => void;
+  readonly onVoice?: (recording: Recorded) => void;
+  /** A message to scroll to and highlight (a task's «پیام مبدأ»); `onFocusShown` clears it. */
+  readonly focusedMessageId?: string | null;
+  readonly onFocusShown?: () => void;
 }
+
+const HIGHLIGHT_MS = 2400;
 
 /**
  * Main chat surface: header, scrollable body with Jalali date dividers, and the composer.
@@ -62,7 +70,12 @@ export function ChatView({
   defaultProjectId,
   typingNames = [],
   onTyping,
+  onAttach,
+  onVoice,
+  focusedMessageId = null,
+  onFocusShown,
 }: ChatViewProps) {
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [inChatQuery, setInChatQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -101,6 +114,22 @@ export function ChatView({
       bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [conversation.id, thread.length]);
+
+  // «پیام مبدأ»: once the message is in the thread, bring it to the middle and flash it.
+  const focusPresent = focusedMessageId !== null && thread.some((message) => message.id === focusedMessageId);
+  useEffect(() => {
+    if (!focusedMessageId || !focusPresent) return;
+    const element = scrollRef.current?.querySelector<HTMLElement>(`[data-message-id="${focusedMessageId}"]`);
+    element?.scrollIntoView({ block: 'center' });
+    setHighlightedId(focusedMessageId);
+    onFocusShown?.();
+  }, [focusedMessageId, focusPresent, onFocusShown]);
+
+  useEffect(() => {
+    if (!highlightedId) return;
+    const timer = window.setTimeout(() => setHighlightedId(null), HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [highlightedId]);
 
   const replyTarget = replyToId ? messageById(messages, replyToId) : undefined;
   const replyPreview = replyTarget
@@ -223,13 +252,29 @@ export function ChatView({
               <div key={group.isoDate} className="flex flex-col gap-1">
                 <DateDivider iso={group.isoDate} />
                 {group.messages.map((message, index) => {
+                  if (message.body.kind === 'system') {
+                    return (
+                      <div key={message.id} data-message-id={message.id}>
+                        <SystemLine text={message.body.text} />
+                      </div>
+                    );
+                  }
                   const author = userById(message.authorId);
                   if (!author) return null;
                   const previous = group.messages[index - 1];
                   const replied = message.replyToId ? messageById(messages, message.replyToId) : undefined;
 
                   return (
-                    <div key={message.id} className={cn(index > 0 && 'mt-0.5')}>
+                    <div
+                      key={message.id}
+                      data-message-id={message.id}
+                      data-highlighted={highlightedId === message.id || undefined}
+                      className={cn(
+                        'rounded-xl transition-colors duration-700',
+                        index > 0 && 'mt-0.5',
+                        highlightedId === message.id && 'bg-brand-subtle ring-2 ring-brand',
+                      )}
+                    >
                       <MessageBubble
                         message={message}
                         author={author}
@@ -273,6 +318,8 @@ export function ChatView({
         replyPreview={replyPreview}
         onCancelReply={() => setReplyToId(null)}
         {...(onTyping ? { onTyping } : {})}
+        {...(onAttach ? { onAttach } : {})}
+        {...(onVoice ? { onVoice } : {})}
         onSend={(text) => {
           onSend(text, replyToId);
           setReplyToId(null);

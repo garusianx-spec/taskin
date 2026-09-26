@@ -1,5 +1,16 @@
 import type {
   AcceptInvitationResult,
+  AttachmentView,
+  CompleteUploadBody,
+  ConvertMessageBody,
+  ConvertMessageResult,
+  CreateUploadBody,
+  FileLink,
+  MediaPage,
+  MediaTab,
+  MoveSubtaskBody,
+  UploadTicket,
+  UploadView,
   ActivityPage,
   CalendarEventView,
   CalendarView,
@@ -95,6 +106,16 @@ export const api = {
     acceptInvitation: (token: string) => http.post<AcceptInvitationResult>('/invitations/accept', { token }),
   },
 
+  files: {
+    plan: (workspaceId: string, body: CreateUploadBody) => http.post<UploadView>(`${ws(workspaceId)}/files/uploads`, body, { idempotent: true }),
+    complete: (workspaceId: string, attachmentId: string, body: CompleteUploadBody = {}) =>
+      http.post<AttachmentView>(`${ws(workspaceId)}/files/uploads/${attachmentId}/complete`, body),
+    abort: (workspaceId: string, attachmentId: string) => http.post<void>(`${ws(workspaceId)}/files/uploads/${attachmentId}/abort`),
+    link: (workspaceId: string, attachmentId: string, disposition: FileLink['disposition']) =>
+      http.get<FileLink>(`${ws(workspaceId)}/files/${attachmentId}/link${query({ disposition })}`),
+    iconTicket: () => http.post<UploadTicket>('/uploads/workspace-icon'),
+  },
+
   projects: {
     list: (workspaceId: string) => http.get<ProjectView[]>(`${ws(workspaceId)}/projects`),
     create: (workspaceId: string, body: CreateProjectBody) => http.post<ProjectView>(`${ws(workspaceId)}/projects`, body, { idempotent: true }),
@@ -129,6 +150,10 @@ export const api = {
       http.post<SubtaskView>(`${ws(workspaceId)}/tasks/${taskId}/subtasks`, { title }),
     updateSubtask: (workspaceId: string, taskId: string, subtaskId: string, body: UpdateSubtaskBody) =>
       http.patch<SubtaskView>(`${ws(workspaceId)}/tasks/${taskId}/subtasks/${subtaskId}`, body),
+    moveSubtask: (workspaceId: string, taskId: string, subtaskId: string, body: MoveSubtaskBody) =>
+      http.post<SubtaskView>(`${ws(workspaceId)}/tasks/${taskId}/subtasks/${subtaskId}/move`, body),
+    attach: (workspaceId: string, taskId: string, attachmentId: string) => http.post<void>(`${ws(workspaceId)}/tasks/${taskId}/attachments`, { attachmentId }),
+    detach: (workspaceId: string, taskId: string, attachmentId: string) => http.delete<void>(`${ws(workspaceId)}/tasks/${taskId}/attachments/${attachmentId}`),
     removeSubtask: (workspaceId: string, taskId: string, subtaskId: string) =>
       http.delete<void>(`${ws(workspaceId)}/tasks/${taskId}/subtasks/${subtaskId}`),
     comment: (workspaceId: string, taskId: string, body: string, replyToId: string | null) =>
@@ -144,6 +169,11 @@ export const api = {
       http.put<ConversationView>(`${ws(workspaceId)}/conversations/${conversationId}/me`, body),
     messages: (workspaceId: string, conversationId: string, params: { readonly beforeSeq?: number; readonly afterSeq?: number; readonly limit?: number }) =>
       http.get<MessagePage>(`${ws(workspaceId)}/conversations/${conversationId}/messages${query(params)}`),
+    media: (workspaceId: string, conversationId: string, tab: MediaTab, cursor?: string) =>
+      http.get<MediaPage>(`${ws(workspaceId)}/conversations/${conversationId}/media${query({ tab, limit: 100, ...(cursor ? { cursor } : {}) })}`),
+    /** «تبدیل پیام به وظیفه». */
+    convert: (workspaceId: string, conversationId: string, messageId: string, body: ConvertMessageBody) =>
+      http.post<ConvertMessageResult>(`${ws(workspaceId)}/conversations/${conversationId}/messages/${messageId}/task`, body, { idempotent: true }),
   },
 
   calendar: {

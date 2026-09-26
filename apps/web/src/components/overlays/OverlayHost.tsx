@@ -110,7 +110,6 @@ export function OverlayHost() {
       <CreateWorkspaceModal
         open={active?.kind === 'workspace-create'}
         requirePassword={live !== null && !hasPassword}
-        allowIcon={live === null}
         onClose={close}
         onSubmit={(draft, adminPassword) => {
           dispatch({

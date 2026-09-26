@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { useFileUrl } from '@/store/files';
 import { formatDuration } from '@taskin/jalali';
 import { PauseIcon, PlayIcon } from '@/components/icons';
 
@@ -204,4 +205,10 @@ export function VoicePlayer({ durationSec, waveform, src, outgoing, label, varia
       </span>
     </div>
   );
+}
+
+/** A voice note or audio file: its local recording (`src`), or the stored copy through a signed link. */
+export function StoredVoicePlayer({ attachmentId, src, ...player }: VoicePlayerProps & { readonly attachmentId: string | null }) {
+  const stored = useFileUrl(src || !attachmentId ? null : { id: attachmentId, url: null }, 'inline');
+  return <VoicePlayer {...player} src={src ?? stored} />;
 }

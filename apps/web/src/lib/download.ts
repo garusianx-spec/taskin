@@ -1,20 +1,23 @@
 import type { Attachment } from '@taskin/contracts';
 import { formatFileSize } from './format';
 import { formatJalali } from '@taskin/jalali';
+import { resolveFileUrl } from '@/store/files';
 
 /**
  * Saves an attachment to the user's device.
  *
- * Uploaded files carry a `url` and download directly. Fixtures ship no binaries (see README,
- * "What is mocked"), so for those the browser receives a small, clearly named text receipt
- * describing the file rather than a fake `.zip` or `.pdf` that would fail to open.
+ * Uploaded files download through a short-lived link (or their own `url`, for a local preview).
+ * Demo fixtures ship no binaries (see README), so for those the browser receives a small,
+ * clearly named text receipt describing the file rather than a fake `.zip` or `.pdf`.
  */
-export function downloadAttachment(attachment: Attachment): void {
+export async function downloadAttachment(attachment: Attachment): Promise<void> {
+  // Uploaded files get a short-lived link that already says "download, with this name".
+  const url = await resolveFileUrl(attachment, 'attachment');
   const anchor = document.createElement('a');
   let revoke: (() => void) | null = null;
 
-  if (attachment.url) {
-    anchor.href = attachment.url;
+  if (url) {
+    anchor.href = url;
     anchor.download = attachment.name;
   } else {
     const receipt = [

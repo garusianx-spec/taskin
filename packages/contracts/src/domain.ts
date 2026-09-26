@@ -130,6 +130,14 @@ export interface Attachment {
   readonly url: string | null;
 }
 
+export interface TaskSourceRef {
+  readonly accessible: boolean;
+  readonly conversationId: string | null;
+  readonly authorId: string | null;
+  readonly excerpt: string | null;
+  readonly deleted: boolean;
+}
+
 export interface TaskComment {
   readonly id: string;
   readonly authorId: string;
@@ -159,6 +167,11 @@ export interface Task {
   readonly starred: boolean;
   /** Set when the task was created from a chat message via "تبدیل به وظیفه". */
   readonly sourceMessageId: string | null;
+  /**
+   * Where that message is, for the "پیام مبدأ" link, when the server said (the message itself may
+   * not be loaded). `accessible` is false for people outside its conversation.
+   */
+  readonly sourceMessage?: TaskSourceRef;
   /**
    * Custom board column the card sits in. `null` places it in the built-in column for its
    * `status`, which is where every seeded task starts.
@@ -227,7 +240,14 @@ export type ConversationKind = 'direct' | 'group' | 'channel';
 
 export type MessageBody =
   | { readonly kind: 'text'; readonly text: string }
-  | { readonly kind: 'voice'; readonly durationSec: number; readonly waveform: readonly number[]; readonly src: string | null }
+  | {
+      readonly kind: 'voice';
+      readonly durationSec: number;
+      readonly waveform: readonly number[];
+      readonly src: string | null;
+      /** The stored recording, when it lives on the server (the player asks for a link). */
+      readonly attachmentId?: string;
+    }
   | { readonly kind: 'file'; readonly attachment: Attachment; readonly caption: string | null }
   | { readonly kind: 'system'; readonly text: string };
 

@@ -1,15 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Attachment, AttachmentKind, Message } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
 import { formatCount, formatFileSize, seededUnit } from '@/lib/format';
 import { formatJalali, formatTime } from '@taskin/jalali';
 import { describeLink, extractUrls, type SharedLink } from '@/lib/links';
 import { downloadAttachment } from '@/lib/download';
+import { useFileUrl } from '@/store/files';
 import { userById } from '@/store/selectors';
 import { Avatar, Button, EmptyState, IconButton, Modal, Tabs } from '@/components/ui';
-import { VoicePlayer } from './VoicePlayer';
+import { StoredVoicePlayer } from './VoicePlayer';
 import {
   ATTACHMENT_ICONS,
   DocumentIcon,
@@ -32,6 +33,8 @@ interface SharedAudio {
   readonly durationSec: number;
   readonly waveform: readonly number[];
   readonly src: string | null;
+  /** The stored file, played through a signed link when there is no local `src`. */
+  readonly attachmentId: string | null;
   readonly name: string;
 }
 
@@ -69,7 +72,14 @@ function categorise(thread: readonly Message[]) {
   for (const message of thread) {
     const { body } = message;
     if (body.kind === 'voice') {
-      audio.push({ message, durationSec: body.durationSec, waveform: body.waveform, src: body.src, name: 'پیام صوتی' });
+      audio.push({
+        message,
+        durationSec: body.durationSec,
+        waveform: body.waveform.length > 0 ? body.waveform : syntheticWaveform(message.id),
+        src: body.src,
+        attachmentId: body.attachmentId ?? null,
+        name: 'پیام صوتی',
+      });
     } else if (body.kind === 'file') {
       const { attachment } = body;
       if (MEDIA_KINDS.includes(attachment.kind)) media.push({ message, attachment });
@@ -79,6 +89,7 @@ function categorise(thread: readonly Message[]) {
           durationSec: Math.max(1, Math.round(attachment.size / AUDIO_BYTES_PER_SECOND)),
           waveform: syntheticWaveform(attachment.id),
           src: attachment.url,
+          attachmentId: attachment.id,
           name: attachment.name,
         });
       } else files.push({ message, attachment });
@@ -97,10 +108,25 @@ const stamp = (message: Message): string => `${formatJalali(message.sentAt, 'day
  * "فایل‌های مشترک" in the conversation drawer: one tab per content type — documents,
  * photos & videos, audio and links — each with its count and its own empty state.
  */
-export function SharedMedia({ thread }: { readonly thread: readonly Message[] }) {
+export function SharedMedia({ thread, load }: { readonly thread: readonly Message[]; readonly load?: () => Promise<readonly Message[]> }) {
   const [tab, setTab] = useState<SharedMediaTab>('files');
   const [preview, setPreview] = useState<SharedFile | null>(null);
-  const shared = useMemo(() => categorise(thread), [thread]);
+  // Live, the server lists everything ever shared here (not only the loaded page of history);
+  // it is asked again whenever the thread grows.
+  const [remote, setRemote] = useState<readonly Message[] | null>(null);
+  useEffect(() => {
+    if (!load) return;
+    let live = true;
+    void load()
+      .then((messages) => {
+        if (live) setRemote(messages);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [load, thread.length]);
+  const shared = useMemo(() => categorise(remote ?? thread), [remote, thread]);
 
   const total = shared.files.length + shared.media.length + shared.audio.length + shared.links.length;
 
@@ -168,7 +194,7 @@ function FilesPanel({ files }: { readonly files: readonly SharedFile[] }) {
               label={`دانلود ${attachment.name}`}
               icon={<DownloadIcon size={16} />}
               size="xs"
-              onClick={() => downloadAttachment(attachment)}
+              onClick={() => void downloadAttachment(attachment)}
             />
           </li>
         );
@@ -180,13 +206,14 @@ function FilesPanel({ files }: { readonly files: readonly SharedFile[] }) {
 function MediaThumb({ attachment, large = false }: { readonly attachment: Attachment; readonly large?: boolean }) {
   const Icon = ATTACHMENT_ICONS[attachment.kind];
   const gradient = PREVIEW_GRADIENTS[Math.floor(seededUnit(attachment.id) * PREVIEW_GRADIENTS.length)] ?? PREVIEW_GRADIENTS[0];
+  const url = useFileUrl(attachment.kind === 'image' || (attachment.kind === 'video' && large) ? attachment : null, 'inline');
 
-  if (attachment.url && attachment.kind === 'image') {
+  if (url && attachment.kind === 'image') {
     // eslint-disable-next-line @next/next/no-img-element -- user uploads of unknown dimensions
-    return <img src={attachment.url} alt="" className="size-full object-cover" />;
+    return <img src={url} alt="" className="size-full object-cover" />;
   }
-  if (attachment.url && attachment.kind === 'video' && large) {
-    return <video src={attachment.url} controls className="size-full bg-black object-contain" />;
+  if (url && attachment.kind === 'video' && large) {
+    return <video src={url} controls className="size-full bg-black object-contain" />;
   }
   return (
     <span className={cn('flex size-full items-center justify-center bg-gradient-to-br text-white', gradient)}>
@@ -266,8 +293,9 @@ function AudioPanel({ audio }: { readonly audio: readonly SharedAudio[] }) {
                 <span className="numeric truncate text-micro text-fg-tertiary">{`${sender?.fullName ?? ''}، ${stamp(entry.message)}`}</span>
               </span>
             </span>
-            <VoicePlayer
+            <StoredVoicePlayer
               variant="inline"
+              attachmentId={entry.attachmentId}
               durationSec={entry.durationSec}
               waveform={entry.waveform}
               src={entry.src}
@@ -342,7 +370,7 @@ function MediaPreviewModal({ entry, onClose }: { readonly entry: SharedFile | nu
             <Button variant="secondary" onClick={onClose}>
               بستن
             </Button>
-            <Button iconStart={<DownloadIcon size={18} />} onClick={() => downloadAttachment(entry.attachment)}>
+            <Button iconStart={<DownloadIcon size={18} />} onClick={() => void downloadAttachment(entry.attachment)}>
               دانلود
             </Button>
           </>

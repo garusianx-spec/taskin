@@ -1,5 +1,6 @@
 import type {
   ActivityItem,
+  Attachment,
   AppNotification,
   AvatarTone,
   BoardColumn,
@@ -42,6 +43,7 @@ import {
   statusLabel,
 } from '@/data/reference';
 import { toPersianDigits } from '@taskin/jalali';
+import { attachmentKindOf } from '@/lib/attachments';
 import { columnForTask } from './selectors';
 import { nextLocalId as nextId } from './ids';
 import { INITIAL_WORKSPACE_STATE } from './initial-state';
@@ -57,6 +59,8 @@ export interface WorkspaceState {
   readonly projects: readonly Project[];
   /** Who is typing where right now; cleared by the server's stop or after a few seconds. */
   readonly typingByConversation: Readonly<Record<string, readonly string[]>>;
+  /** A message to scroll to and highlight once its conversation is on screen (the task's «پیام مبدأ»). */
+  readonly focusedMessageId: string | null;
   readonly workspaces: readonly Workspace[];
   readonly activeWorkspaceId: string;
   /** Scoped data of the workspaces not on screen, restored when switched back to. */
@@ -118,10 +122,30 @@ export type WorkspaceAction =
   | { readonly type: 'add-subtask'; readonly taskId: string; readonly title: string }
   | { readonly type: 'remove-subtask'; readonly taskId: string; readonly subtaskId: string }
   | { readonly type: 'move-subtask'; readonly taskId: string; readonly subtaskId: string; readonly delta: number }
+  | { readonly type: 'attach-task-files'; readonly taskId: string; readonly authorId: string; readonly files: readonly PickedFile[] }
+  | { readonly type: 'remove-task-attachment'; readonly taskId: string; readonly attachmentId: string }
   | { readonly type: 'add-task-comment'; readonly taskId: string; readonly authorId: string; readonly body: string; readonly replyToId: string | null }
   | { readonly type: 'create-task'; readonly draft: TaskDraft; readonly authorId: string }
   | { readonly type: 'create-conversation'; readonly draft: ConversationDraft; readonly authorId: string }
   | { readonly type: 'send-message'; readonly conversationId: string; readonly authorId: string; readonly text: string; readonly replyToId: string | null }
+  | {
+      readonly type: 'send-file';
+      readonly conversationId: string;
+      readonly authorId: string;
+      readonly messageId: string;
+      readonly picked: PickedFile;
+      readonly caption: string | null;
+      readonly replyToId: string | null;
+    }
+  | {
+      readonly type: 'send-voice';
+      readonly conversationId: string;
+      readonly authorId: string;
+      readonly messageId: string;
+      readonly recording: VoiceRecording;
+    }
+  | { readonly type: 'focus-message'; readonly conversationId: string; readonly messageId: string }
+  | { readonly type: 'clear-message-focus' }
   | { readonly type: 'toggle-reaction'; readonly messageId: string; readonly emoji: string; readonly userId: string }
   | { readonly type: 'mark-conversation-read'; readonly conversationId: string }
   | { readonly type: 'toggle-conversation-pin'; readonly conversationId: string }
@@ -185,6 +209,7 @@ export type SyncAction =
   | { readonly type: 'sync/read'; readonly userId: string; readonly messageIds: readonly string[] }
   | { readonly type: 'sync/unread'; readonly conversationId: string; readonly count: number }
   | { readonly type: 'sync/typing'; readonly conversationId: string; readonly userId: string; readonly typing: boolean }
+  | { readonly type: 'sync/message-linked'; readonly messageId: string; readonly taskId: string }
   | { readonly type: 'sync/upsert-notification'; readonly notification: AppNotification }
   | { readonly type: 'sync/upsert-event'; readonly event: CalendarEvent; readonly replaceId?: string }
   | { readonly type: 'sync/upsert-note'; readonly note: Note; readonly replaceId?: string }
@@ -204,6 +229,26 @@ export interface ConversationDraft {
   /** Every member, the author included. */
   readonly memberIds: readonly string[];
   readonly tone: AvatarTone;
+}
+
+/**
+ * A file the person picked, before it is stored: the bytes (for the upload) and a local preview
+ * URL (so it shows at once). `attachmentId` is the local id it has until the server's replaces it.
+ */
+export interface PickedFile {
+  readonly attachmentId: string;
+  readonly file: Blob;
+  readonly name: string;
+  readonly previewUrl: string;
+}
+
+/** A voice note just recorded in the composer. */
+export interface VoiceRecording {
+  readonly blob: Blob;
+  readonly durationSec: number;
+  /** 64 samples, 0–100. */
+  readonly waveform: readonly number[];
+  readonly previewUrl: string;
 }
 
 export interface ProjectDraft {
@@ -248,6 +293,19 @@ const mapTask = (
 ): readonly Task[] => tasks.map((task) => (task.id === taskId ? update(task) : task));
 
 const nowIso = (): string => new Date().toISOString();
+
+/** The attachment a picked file shows as until it is stored: its local preview is its URL. */
+function pickedAttachment(picked: PickedFile, uploadedById: string): Attachment {
+  return {
+    id: picked.attachmentId,
+    name: picked.name,
+    kind: attachmentKindOf(picked.file.type, picked.name),
+    size: picked.file.size,
+    uploadedAt: nowIso(),
+    uploadedById,
+    url: picked.previewUrl,
+  };
+}
 
 /**
  * The one place a task changes status. Entering "done" from anywhere else records where the
@@ -678,6 +736,65 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       return { ...state, messages: [...state.messages, message] };
     }
 
+    case 'send-file': {
+      const { picked } = action;
+      const message: Message = {
+        id: action.messageId,
+        conversationId: action.conversationId,
+        authorId: action.authorId,
+        sentAt: nowIso(),
+        body: { kind: 'file', attachment: pickedAttachment(picked, action.authorId), caption: action.caption },
+        replyToId: action.replyToId,
+        reactions: [],
+        edited: false,
+        linkedTaskId: null,
+        readByIds: [],
+      };
+      return { ...state, messages: [...state.messages, message] };
+    }
+
+    case 'send-voice': {
+      const { recording } = action;
+      const message: Message = {
+        id: action.messageId,
+        conversationId: action.conversationId,
+        authorId: action.authorId,
+        sentAt: nowIso(),
+        body: { kind: 'voice', durationSec: recording.durationSec, waveform: recording.waveform, src: recording.previewUrl },
+        replyToId: null,
+        reactions: [],
+        edited: false,
+        linkedTaskId: null,
+        readByIds: [],
+      };
+      return { ...state, messages: [...state.messages, message] };
+    }
+
+    case 'focus-message':
+      return { ...state, activeConversationId: action.conversationId, focusedMessageId: action.messageId, inspector: { kind: 'none' } };
+
+    case 'clear-message-focus':
+      return state.focusedMessageId === null ? state : { ...state, focusedMessageId: null };
+
+    case 'attach-task-files':
+      return {
+        ...state,
+        tasks: mapTask(state.tasks, action.taskId, (task) => ({
+          ...task,
+          attachments: [...task.attachments, ...action.files.map((picked) => pickedAttachment(picked, action.authorId))],
+        })),
+        announcement: `${toPersianDigits(action.files.length)} فایل پیوست شد.`,
+      };
+
+    case 'remove-task-attachment':
+      return {
+        ...state,
+        tasks: mapTask(state.tasks, action.taskId, (task) => ({
+          ...task,
+          attachments: task.attachments.filter((attachment) => attachment.id !== action.attachmentId),
+        })),
+      };
+
     case 'toggle-reaction':
       return {
         ...state,
@@ -1015,6 +1132,7 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     case 'sync/read':
     case 'sync/unread':
     case 'sync/typing':
+    case 'sync/message-linked':
     case 'sync/upsert-notification':
     case 'sync/upsert-event':
     case 'sync/upsert-note':
@@ -1142,6 +1260,12 @@ function syncReducer(state: WorkspaceState, action: SyncAction): WorkspaceState 
 
     case 'sync/unread':
       return { ...state, unreadByConversation: { ...state.unreadByConversation, [action.conversationId]: action.count } };
+
+    case 'sync/message-linked':
+      return {
+        ...state,
+        messages: state.messages.map((message) => (message.id === action.messageId ? { ...message, linkedTaskId: action.taskId } : message)),
+      };
 
     case 'sync/typing': {
       const current = state.typingByConversation[action.conversationId] ?? [];

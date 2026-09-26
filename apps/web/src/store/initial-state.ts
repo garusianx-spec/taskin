@@ -27,6 +27,7 @@ export const DEMO_WORKSPACE_STATE: WorkspaceState = {
   users: USERS,
   projects: PROJECTS,
   typingByConversation: {},
+  focusedMessageId: null,
   workspaces: WORKSPACES,
   activeWorkspaceId: PRIMARY_WORKSPACE_ID,
   // The other seeded workspaces have not been worked in yet; they open empty.

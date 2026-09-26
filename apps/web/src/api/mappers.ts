@@ -219,6 +219,17 @@ export function taskFromDetail(detail: TaskDetail, columns: readonly BoardColumn
     subtasks: detail.subtasks.map(subtaskFromView),
     comments: detail.comments.map(commentFromView),
     attachments: detail.attachments.map(attachmentFromView),
+    ...(detail.sourceMessage
+      ? {
+          sourceMessage: {
+            accessible: detail.sourceMessage.accessible,
+            conversationId: detail.sourceMessage.conversationId,
+            authorId: detail.sourceMessage.authorId,
+            excerpt: detail.sourceMessage.excerpt,
+            deleted: detail.sourceMessage.deleted,
+          },
+        }
+      : {}),
     reopenTo: reopen ? { status: reopen.status, boardColumnId: reopen.custom ? reopen.id : null } : null,
   };
 }
@@ -259,7 +270,7 @@ function messageBody(view: MessageView, nameOf: (userId: string) => string | und
       return { kind: 'text', text: renderMentions(view.text ?? '', nameOf) };
     case 'voice': {
       const meta = view.meta && 'durationSec' in view.meta ? view.meta : { durationSec: 0, waveform: [] };
-      return { kind: 'voice', durationSec: meta.durationSec, waveform: meta.waveform, src: null };
+      return { kind: 'voice', durationSec: meta.durationSec, waveform: meta.waveform, src: null, ...(view.attachment ? { attachmentId: view.attachment.id } : {}) };
     }
     case 'file':
       return view.attachment

@@ -12,6 +12,7 @@ import type {
   RealtimeEventType,
   RoleId,
   RoleView,
+  SendMessageBody,
   TaskCard,
   TaskDetail,
   TaskDraft,
@@ -24,6 +25,7 @@ import { problemMessage } from '@/api/messages';
 import {
   activityFromView,
   apiColumnFor,
+  attachmentFromView,
   columnFromView,
   conversationFromView,
   eventFromView,
@@ -42,10 +44,12 @@ import {
   workspaceFromView,
 } from '@/api/mappers';
 import { RealtimeClient, type ConnectionStatus } from '@/api/realtime';
+import { blobFromDataUrl, postForm, uploadFile } from '@/api/uploads';
+import { setFileResolver, type FileDisposition } from '../files';
 import { session } from '@/api/session';
 import { DEFAULT_PERMISSION_MATRIX, DEPARTMENTS } from '@/data/reference';
 import { LIVE_EMPTY_STATE } from '../initial-state';
-import type { ConversationDraft, TaskPatch, WorkspaceAction, WorkspaceState } from '../workspace-reducer';
+import type { ConversationDraft, PickedFile, TaskPatch, VoiceRecording, WorkspaceAction, WorkspaceState } from '../workspace-reducer';
 
 export type LivePhase = 'restoring' | 'signed-out' | 'loading' | 'no-workspace' | 'ready';
 
@@ -113,6 +117,8 @@ export class LiveStore {
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly noteTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private typingSentAt = new Map<string, number>();
+  /** Signed file links, reused until shortly before they expire. */
+  private readonly links = new Map<string, { readonly url: string; readonly expires: number }>();
 
   private getState: () => WorkspaceState = () => LIVE_EMPTY_STATE;
   private apply: Apply = () => undefined;
@@ -136,6 +142,7 @@ export class LiveStore {
       onRejected: () => this.ended(),
       refreshToken: async () => (await session.restore()) !== null,
     });
+    setFileResolver((attachmentId, disposition) => this.fileLink(attachmentId, disposition));
     session.subscribe((current) => {
       if (current) this.realtime.refreshToken(current.accessToken);
       else if (this.status.phase === 'ready' || this.status.phase === 'loading' || this.status.phase === 'no-workspace') this.ended();
@@ -231,6 +238,7 @@ export class LiveStore {
     this.detailLoaded.clear();
     this.lastEventId = null;
     this.buffered = null;
+    this.links.clear();
     for (const timer of this.typingTimers.values()) clearTimeout(timer);
     this.typingTimers.clear();
   }
@@ -390,11 +398,17 @@ export class LiveStore {
   async ensureDetail(taskId: string): Promise<void> {
     if (this.detailLoaded.has(taskId) || isLocal(taskId)) return;
     this.detailLoaded.add(taskId);
+    const known = this.getState().tasks.some((task) => task.id === taskId);
     try {
       this.upsertDetail(await api.tasks.get(this.workspaceId, taskId));
     } catch (error) {
       this.detailLoaded.delete(taskId);
       if (isProblem(error, 'NOT_FOUND')) this.apply({ type: 'sync/remove-task', taskId });
+      // A chat chip can name a task of a project this member cannot see.
+      if (!known && (isProblem(error, 'NOT_FOUND') || isProblem(error, 'FORBIDDEN'))) {
+        this.apply({ type: 'close-inspector' });
+        this.notify('این وظیفه در پروژه‌ای است که به آن دسترسی ندارید.');
+      }
     }
   }
 
@@ -415,6 +429,31 @@ export class LiveStore {
       this.historyLoaded.delete(conversationId);
       this.fail(error);
     }
+  }
+
+  /**
+   * Everything shared in a conversation, as the server lists it (the whole history, not only the
+   * loaded page): files, media, voice notes and links, as messages the shared-media drawer sorts.
+   */
+  async sharedMedia(conversationId: string): Promise<Message[]> {
+    if (isLocal(conversationId)) return [];
+    const tabs = ['files', 'media', 'audio', 'links'] as const;
+    const pages = await Promise.all(tabs.map((tab) => api.conversations.media(this.workspaceId, conversationId, tab)));
+    const messages: Message[] = [];
+    pages.forEach((page, index) => {
+      const tab = tabs[index];
+      page.items.forEach((item, position) => {
+        const base = { conversationId, authorId: item.authorId ?? '', sentAt: item.createdAt, replyToId: null, reactions: [], edited: false, linkedTaskId: null, readByIds: [] };
+        if (tab === 'links') {
+          if (item.url) messages.push({ ...base, id: `${item.messageId}~link~${position}`, body: { kind: 'text', text: item.url } });
+        } else if (tab === 'audio' && item.durationSec !== null) {
+          messages.push({ ...base, id: item.messageId, body: { kind: 'voice', durationSec: item.durationSec, waveform: [], src: null, ...(item.attachment ? { attachmentId: item.attachment.id } : {}) } });
+        } else if (item.attachment) {
+          messages.push({ ...base, id: item.messageId, body: { kind: 'file', attachment: attachmentFromView(item.attachment), caption: null } });
+        }
+      });
+    });
+    return messages.sort((a, b) => a.sentAt.localeCompare(b.sentAt));
   }
 
   /* ================================================================ changes */
@@ -488,6 +527,27 @@ export class LiveStore {
         return;
       case 'create-task':
         this.createTask(action.draft, prev, next);
+        return;
+      case 'move-subtask':
+        void this.moveSubtask(action.taskId, action.subtaskId, next);
+        return;
+      case 'attach-task-files':
+        this.attachFiles(action.taskId, action.files);
+        return;
+      case 'remove-task-attachment':
+        this.run(async () => {
+          await api.tasks.detach(this.workspaceId, await this.serverId(action.taskId), action.attachmentId);
+        }, () => this.refreshTask(action.taskId));
+        return;
+      case 'send-file':
+        this.sendFile(action.conversationId, action.messageId, action.picked, action.caption, action.replyToId, next);
+        return;
+      case 'send-voice':
+        this.sendVoice(action.conversationId, action.messageId, action.recording, next);
+        return;
+      case 'focus-message':
+        void this.ensureHistory(action.conversationId);
+        this.markRead(action.conversationId);
         return;
       case 'create-project':
         if (!next.projects.some((project) => project.id === action.projectId)) return;
@@ -612,7 +672,13 @@ export class LiveStore {
       case 'create-workspace':
         this.run(async () => {
           if (action.adminPassword) await session.setPassword(action.adminPassword);
-          const created = await api.workspaces.create({ name: action.draft.name.trim(), description: action.draft.description.trim(), tone: action.draft.tone });
+          const iconUploadKey = action.draft.iconUrl ? await this.uploadIcon(action.draft.iconUrl) : undefined;
+          const created = await api.workspaces.create({
+            name: action.draft.name.trim(),
+            description: action.draft.description.trim(),
+            tone: action.draft.tone,
+            ...(iconUploadKey ? { iconUploadKey } : {}),
+          });
           await this.load(created.id);
         }, () => this.load(prev.activeWorkspaceId));
         return;
@@ -677,7 +743,23 @@ export class LiveStore {
     this.track(local.id, async () => {
       const column = apiColumnFor(this.getState().boardColumns, { status: local.status, boardColumnId: local.boardColumnId });
       let detail: TaskDetail;
-      if (draft.sourceNoteId) {
+      const source = draft.sourceMessageId ? this.getState().messages.find((message) => message.id === draft.sourceMessageId) : undefined;
+      if (draft.sourceMessageId && source) {
+        // «تبدیل پیام به وظیفه»: the server links the task to the message (and the message's file).
+        const converted = await api.conversations.convert(this.workspaceId, await this.serverId(source.conversationId), await this.serverId(draft.sourceMessageId), {
+          projectId: await this.serverId(draft.projectId),
+          title: draft.title,
+          description: draft.description,
+          columnId: column?.id ?? null,
+          priority: draft.priority,
+          assigneeIds: draft.assigneeIds,
+          dueDate: draft.dueDate,
+          subtasks: draft.subtaskTitles,
+          attachmentIds: draft.attachments.filter((attachment) => !isLocal(attachment.id)).map((attachment) => attachment.id),
+        });
+        if (converted.existing) this.notify(`این پیام پیش‌تر به وظیفه ${converted.task.code} تبدیل شده بود؛ همان وظیفه باز شد.`);
+        detail = converted.task;
+      } else if (draft.sourceNoteId) {
         const converted = await api.notes.convert(this.workspaceId, await this.serverId(draft.sourceNoteId), {
           projectId: await this.serverId(draft.projectId),
           columnId: column?.id ?? null,
@@ -786,6 +868,36 @@ export class LiveStore {
     }
   }
 
+  /** Sends a subtask's new neighbours (from the reordered list) to the server. */
+  private async moveSubtask(taskId: string, subtaskId: string, next: WorkspaceState): Promise<void> {
+    const list = next.tasks.find((task) => task.id === taskId)?.subtasks ?? [];
+    const index = list.findIndex((subtask) => subtask.id === subtaskId);
+    if (index === -1 || isLocal(subtaskId)) return;
+    const neighbour = (at: number) => {
+      const id = list[at]?.id;
+      return id && !isLocal(id) ? id : null;
+    };
+    try {
+      await api.tasks.moveSubtask(this.workspaceId, await this.serverId(taskId), subtaskId, { afterId: neighbour(index - 1), beforeId: neighbour(index + 1) });
+    } catch (error) {
+      this.fail(error);
+      await this.refreshTask(taskId).catch(() => undefined);
+    }
+  }
+
+  /** Uploads picked files, then links each to the task. */
+  private attachFiles(taskId: string, files: readonly PickedFile[]): void {
+    this.run(async () => {
+      const id = await this.serverId(taskId);
+      for (const picked of files) {
+        const stored = await uploadFile(this.workspaceId, picked.file, picked.name);
+        await api.tasks.attach(this.workspaceId, id, stored.id);
+      }
+      await this.refreshTask(id);
+      for (const picked of files) URL.revokeObjectURL(picked.previewUrl);
+    }, () => this.refreshTask(taskId));
+  }
+
   /* ---------------------------------------------------------------- board */
 
   private async addColumn(prev: WorkspaceState, next: WorkspaceState, title: string, tone: BoardColumn['tone']): Promise<void> {
@@ -884,6 +996,120 @@ export class LiveStore {
     });
   }
 
+  /** Uploads the file, then sends it as a message (socket first, HTTP when the socket is down). */
+  private sendFile(conversationId: string, localId: string, picked: PickedFile, caption: string | null, replyToId: string | null, next: WorkspaceState): void {
+    this.track(localId, async () => {
+      const stored = await this.upload(localId, picked.file, picked.name);
+      const sent = await this.post(conversationId, localId, {
+        kind: 'file',
+        attachmentId: stored.id,
+        ...(caption ? { text: caption } : {}),
+        ...(replyToId ? { replyToId: await this.serverId(replyToId) } : {}),
+      });
+      const current = this.getState().messages.find((message) => message.id === localId);
+      const id = await this.serverId(conversationId);
+      this.apply({
+        type: 'sync/upsert-messages',
+        messages: [
+          {
+            ...(current ?? { conversationId: id, authorId: next.meId, replyToId, reactions: [], edited: false, linkedTaskId: null }),
+            id: sent.id,
+            conversationId: id,
+            sentAt: sent.createdAt,
+            body: { kind: 'file', attachment: attachmentFromView(stored), caption },
+            readByIds: this.readersOf(id, sent.seq, next.meId),
+          } as Message,
+        ],
+        replaceId: localId,
+      });
+      URL.revokeObjectURL(picked.previewUrl);
+      return sent.id;
+    });
+  }
+
+  /** Uploads the recording, then sends it as a voice note. */
+  private sendVoice(conversationId: string, localId: string, recording: VoiceRecording, next: WorkspaceState): void {
+    this.track(localId, async () => {
+      const extension = recording.blob.type.includes('ogg') ? 'ogg' : recording.blob.type.includes('mp4') ? 'm4a' : 'webm';
+      const stored = await this.upload(localId, recording.blob, `voice-${Date.now()}.${extension}`);
+      const sent = await this.post(conversationId, localId, { kind: 'voice', attachmentId: stored.id, durationSec: recording.durationSec, waveform: recording.waveform });
+      const id = await this.serverId(conversationId);
+      const current = this.getState().messages.find((message) => message.id === localId);
+      this.apply({
+        type: 'sync/upsert-messages',
+        messages: [
+          {
+            ...(current ?? { conversationId: id, authorId: next.meId, replyToId: null, reactions: [], edited: false, linkedTaskId: null }),
+            id: sent.id,
+            conversationId: id,
+            sentAt: sent.createdAt,
+            // The local recording keeps playing until the page reloads; then the stored copy does.
+            body: { kind: 'voice', durationSec: recording.durationSec, waveform: recording.waveform, src: recording.previewUrl, attachmentId: stored.id },
+            readByIds: this.readersOf(id, sent.seq, next.meId),
+          } as Message,
+        ],
+        replaceId: localId,
+      });
+      return sent.id;
+    });
+  }
+
+  /** An upload for a message; a failure takes the optimistic message away and says why. */
+  private async upload(localId: string, blob: Blob, name: string) {
+    try {
+      return await uploadFile(this.workspaceId, blob, name);
+    } catch (error) {
+      this.apply({ type: 'sync/remove-message', messageId: localId });
+      this.notify(problemMessage(error, 'بارگذاری فایل ممکن نشد.'));
+      throw new Error('UPLOAD_FAILED');
+    }
+  }
+
+  /** One send (socket, else HTTP with the same client id); a refusal removes the optimistic message. */
+  private async post(conversationId: string, localId: string, body: Omit<SendMessageBody, 'clientMsgId'>): Promise<{ readonly id: string; readonly seq: number; readonly createdAt: string }> {
+    const id = await this.serverId(conversationId);
+    const full: SendMessageBody = { clientMsgId: crypto.randomUUID(), ...body };
+    let sent = await this.realtime.send(id, full);
+    if (!sent.ok && sent.code === 'SERVICE_UNAVAILABLE' && !this.realtime.connected) {
+      try {
+        const rest = await http.post<{ readonly id: string; readonly seq: number; readonly createdAt: string; readonly duplicate: boolean }>(`/workspaces/${this.workspaceId}/conversations/${id}/messages`, full, { idempotent: true });
+        sent = { ok: true, ...rest };
+      } catch (error) {
+        sent = { ok: false, code: error instanceof ApiProblem && error.code !== 'NETWORK' ? error.code : 'SERVICE_UNAVAILABLE' };
+      }
+    }
+    if (!sent.ok) {
+      this.apply({ type: 'sync/remove-message', messageId: localId });
+      this.notify(problemMessage(new ApiProblem(0, sent.code, sent.message ?? '', null), 'پیام ارسال نشد.'));
+      throw new Error(sent.code);
+    }
+    this.seqOf.set(sent.id, sent.seq);
+    this.lastSeq.set(id, Math.max(this.lastSeq.get(id) ?? 0, sent.seq));
+    return sent;
+  }
+
+  /**
+   * A signed link to a stored file, cached until a minute before it expires. A file just sent may
+   * still be in its scan for a moment (404 until ready): a few short retries cover that.
+   */
+  private async fileLink(attachmentId: string, disposition: FileDisposition): Promise<string | null> {
+    if (!this.workspaceId || isLocal(attachmentId)) return null;
+    const key = `${disposition}:${attachmentId}`;
+    const cached = this.links.get(key);
+    if (cached && cached.expires > Date.now()) return cached.url;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const link = await api.files.link(this.workspaceId, attachmentId, disposition);
+        this.links.set(key, { url: link.url, expires: Date.parse(link.expiresAt) - 60_000 });
+        return link.url;
+      } catch (error) {
+        if (!isProblem(error, 'NOT_FOUND')) return null;
+        await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+      }
+    }
+    return null;
+  }
+
   private async react(messageId: string, emoji: string, next: WorkspaceState): Promise<void> {
     const on = next.messages.find((message) => message.id === messageId)?.reactions.some((reaction) => reaction.emoji === emoji && reaction.userIds.includes(next.meId)) ?? false;
     try {
@@ -974,6 +1200,14 @@ export class LiveStore {
     this.apply({ type: 'sync/merge', patch: { projects: projects.filter((project) => !project.archived).map((project) => projectFromView(project, departmentName)) } });
   }
 
+  /** A workspace icon picked in the dialog (a data URL), sent to its upload ticket; returns the key. */
+  private async uploadIcon(dataUrl: string): Promise<string> {
+    const blob = await blobFromDataUrl(dataUrl);
+    const ticket = await api.files.iconTicket();
+    await postForm(ticket.url, ticket.fields, blob, blob.type || 'image/png');
+    return ticket.key;
+  }
+
   /* ================================================================ realtime */
 
   private receive(envelope: RealtimeEnvelope): void {
@@ -1045,12 +1279,19 @@ export class LiveStore {
         else await this.refreshConversation(data.conversationId);
         return;
       }
+      case 'message:task_linked': {
+        const data = event('message:task_linked');
+        if (data) this.apply({ type: 'sync/message-linked', messageId: data.messageId, taskId: data.taskId });
+        return;
+      }
       case 'task:created':
       case 'task:updated':
       case 'task:moved': {
-        const data = envelope.data as { readonly taskId: string };
+        const data = envelope.data as { readonly taskId: string; readonly fields?: readonly string[] };
         const known = this.versions.get(data.taskId);
-        if (known !== undefined && envelope.version !== undefined && envelope.version <= known) return;
+        // Checklist changes keep the task's version (see the API): they always refetch.
+        const checklist = envelope.type === 'task:updated' && (data.fields ?? []).includes('subtasks');
+        if (!checklist && known !== undefined && envelope.version !== undefined && envelope.version <= known) return;
         await this.refreshTask(data.taskId);
         return;
       }

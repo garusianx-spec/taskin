@@ -17,6 +17,8 @@ export interface ConversationInspectorProps {
   readonly onTogglePin: () => void;
   readonly onToggleMute: () => void;
   readonly onClose: () => void;
+  /** Live: the conversation's shared files, links and voice notes as the server lists them. */
+  readonly loadShared?: () => Promise<readonly Message[]>;
 }
 
 /** Conversation details: members, the categorised shared-content drawer and preferences. */
@@ -28,6 +30,7 @@ export function ConversationInspector({
   onTogglePin,
   onToggleMute,
   onClose,
+  loadShared,
 }: ConversationInspectorProps) {
   const members = useMemo(() => usersByIds(conversation.memberIds), [conversation.memberIds]);
 
@@ -79,7 +82,7 @@ export function ConversationInspector({
           </ul>
         </section>
 
-        <SharedMedia thread={thread} />
+        <SharedMedia thread={thread} {...(loadShared ? { load: loadShared } : {})} />
 
         <section aria-label="تنظیمات گفتگو" className="flex flex-col gap-3">
           <h3 className="text-title-sm font-semibold text-fg-primary">تنظیمات</h3>

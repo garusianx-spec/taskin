@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { BoardColumn, Task, TaskPriority, User } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
 import { formatJalali } from '@taskin/jalali';
+import { downloadAttachment } from '@/lib/download';
 import { formatCount, formatFileSize } from '@/lib/format';
 import { TASK_PRIORITIES, statusTone } from '@/data/reference';
 import { directory } from '@/store/directory';
@@ -53,6 +54,21 @@ export interface TaskInspectorProps {
   readonly onRemoveSubtask: (subtaskId: string) => void;
   readonly onMoveSubtask: (subtaskId: string, delta: number) => void;
   readonly onAddComment: (body: string, replyToId: string | null) => void;
+  readonly onAttachFiles?: (files: readonly File[]) => void;
+  readonly onRemoveAttachment?: (attachmentId: string) => void;
+  /** The chat message the task came from, when it did. */
+  readonly source?: TaskSourceView | null;
+  /** Opens the source message in its conversation, highlighted. */
+  readonly onOpenSource?: () => void;
+}
+
+export interface TaskSourceView {
+  /** `false` for people outside the message's conversation: they only learn that there is one. */
+  readonly accessible: boolean;
+  readonly excerpt: string | null;
+  readonly authorName: string | null;
+  readonly conversationTitle: string | null;
+  readonly deleted: boolean;
 }
 
 /**
@@ -72,7 +88,12 @@ export function TaskInspector({
   onRemoveSubtask,
   onMoveSubtask,
   onAddComment,
+  onAttachFiles,
+  onRemoveAttachment,
+  source = null,
+  onOpenSource,
 }: TaskInspectorProps) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const [comment, setComment] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const project = projectById(task.projectId);
@@ -212,15 +233,67 @@ export function TaskInspector({
           />
         </section>
 
+        {source && (
+          <section aria-labelledby="task-source-title" className="flex flex-col gap-2 rounded-xl border border-secondary bg-sunken p-3">
+            <div className="flex items-center gap-2">
+              <MessagesIcon size={16} className="text-fg-tertiary" />
+              <h3 id="task-source-title" className="text-title-sm font-semibold text-fg-primary">
+                پیام مبدأ
+              </h3>
+              {source.accessible && source.conversationTitle && (
+                <span className="truncate text-caption text-fg-tertiary">{`در ${source.conversationTitle}`}</span>
+              )}
+            </div>
+            {!source.accessible ? (
+              <p className="text-caption text-fg-tertiary">این وظیفه از پیامی در گفتگویی ساخته شده که شما عضو آن نیستید.</p>
+            ) : source.deleted ? (
+              <p className="text-caption text-fg-tertiary">پیام مبدأ حذف شده است.</p>
+            ) : (
+              <>
+                <p className="line-clamp-3 text-body-sm leading-6 text-fg-secondary">
+                  {source.authorName && <strong className="font-semibold text-fg-primary">{`${source.authorName}: `}</strong>}
+                  {source.excerpt ?? 'فایل یا پیام صوتی'}
+                </p>
+                {onOpenSource && (
+                  <Button size="xs" variant="secondary" className="self-start" iconStart={<MessagesIcon size={14} />} onClick={onOpenSource}>
+                    نمایش پیام در گفتگو
+                  </Button>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
         <section aria-label="مخزن فایل وظیفه">
           <div className="mb-2 flex items-center gap-2">
             <h3 className="text-title-sm font-semibold text-fg-primary">فایل‌ها</h3>
             <span className="numeric text-caption text-fg-tertiary">
               {formatCount(task.attachments.length)}
             </span>
-            <Button size="xs" variant="secondary" className="ms-auto" iconStart={<PaperclipIcon size={14} />}>
+            <Button
+              size="xs"
+              variant="secondary"
+              className="ms-auto"
+              iconStart={<PaperclipIcon size={14} />}
+              onClick={() => fileRef.current?.click()}
+              disabled={!onAttachFiles}
+            >
               پیوست فایل
             </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="sr-only"
+              tabIndex={-1}
+              aria-label="انتخاب فایل برای پیوست به وظیفه"
+              data-testid="task-file-input"
+              onChange={(event) => {
+                const files = [...(event.target.files ?? [])].filter((file) => file.size > 0);
+                event.target.value = '';
+                if (files.length > 0) onAttachFiles?.(files);
+              }}
+            />
           </div>
 
           {task.attachments.length === 0 ? (
@@ -248,12 +321,19 @@ export function TaskInspector({
                         {`${formatFileSize(attachment.size)}، ${uploader?.fullName ?? ''}، ${formatJalali(attachment.uploadedAt, 'day-month')}`}
                       </span>
                     </span>
-                    <IconButton label={`دانلود ${attachment.name}`} icon={<DownloadIcon size={16} />} size="xs" />
+                    <IconButton
+                      label={`دانلود ${attachment.name}`}
+                      icon={<DownloadIcon size={16} />}
+                      size="xs"
+                      onClick={() => void downloadAttachment(attachment)}
+                    />
                     <IconButton
                       label={`حذف ${attachment.name}`}
                       icon={<TrashIcon size={16} />}
                       size="xs"
                       className="hover:text-status-blocked"
+                      onClick={() => onRemoveAttachment?.(attachment.id)}
+                      disabled={!onRemoveAttachment}
                     />
                   </li>
                 );

@@ -56,9 +56,17 @@ export function visible(locator, timeout = 5000) {
   );
 }
 
-/** Chromium from `CHROMIUM_PATH` when set (a preinstalled browser), else Playwright's own install. */
-export function launch() {
-  return chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
+/**
+ * Chromium from `CHROMIUM_PATH` when set (a preinstalled browser), else Playwright's own install.
+ * It runs under a UTF-8 locale: on Linux, Chromium names a download after its (Persian)
+ * `filename*` only when the locale can spell it, and CI containers often have none.
+ */
+export function launch(options = {}) {
+  return chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || undefined,
+    ...options,
+    env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', ...options.env },
+  });
 }
 
 export function watchConsole(page) {

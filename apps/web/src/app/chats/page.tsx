@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLive, useWorkspace } from '@/store/WorkspaceProvider';
 import { conversationById, filterConversations, userById } from '@/store/selectors';
 import { directory } from '@/store/directory';
+import { nextLocalId } from '@/store/ids';
 import { AppShell } from '@/components/layout/AppShell';
 import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -88,6 +89,7 @@ interface ChatContentProps {
 function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentProps) {
   const { state, dispatch } = useWorkspace();
   const live = useLive();
+  const clearFocus = useCallback(() => dispatch({ type: 'clear-message-focus' }), [dispatch]);
   const { openTaskComposer } = useOverlays();
   const conversation = conversationById(state.conversations, state.activeConversationId);
 
@@ -118,6 +120,30 @@ function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentPro
         dispatch({ type: 'open-conversation-details', conversationId: conversation.id })
       }
       typingNames={(state.typingByConversation[conversation.id] ?? []).map((userId) => userById(userId)?.fullName ?? 'کسی')}
+      onAttach={(files) => {
+        for (const file of files) {
+          dispatch({
+            type: 'send-file',
+            conversationId: conversation.id,
+            authorId: currentUserId,
+            messageId: nextLocalId('m'),
+            picked: { attachmentId: nextLocalId('att'), file, name: file.name, previewUrl: URL.createObjectURL(file) },
+            caption: null,
+            replyToId: null,
+          });
+        }
+      }}
+      onVoice={(recorded) =>
+        dispatch({
+          type: 'send-voice',
+          conversationId: conversation.id,
+          authorId: currentUserId,
+          messageId: nextLocalId('m'),
+          recording: { ...recorded, previewUrl: URL.createObjectURL(recorded.blob) },
+        })
+      }
+      focusedMessageId={state.focusedMessageId}
+      onFocusShown={clearFocus}
       {...(live ? { onTyping: (active: boolean) => live.store.typing(conversation.id, active) } : {})}
     />
   );
