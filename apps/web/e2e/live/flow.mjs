@@ -1,11 +1,12 @@
 /**
  * The live app against a running Taskin API: two people, two browsers, one workspace.
  *
- *   API_LOG=/path/to/api.log BASE_URL=http://localhost:3000 npm run test:e2e:live
+ *   API_LOG=/path/to/api.log npm run test:e2e:live      # BASE_URL defaults to http://localhost:3000
  *
  * The API must run with the console SMS driver (the default outside production) and log to
  * `API_LOG`: sign-in codes and invitation links are read from there. The web app must be built
- * or served with the live data source (the default), proxying `/api/v1` and `/rt` to that API.
+ * or served with the live data source (the default), proxying `/api/v1` and `/rt` to that API, on
+ * an origin the API allows (its PUBLIC_WEB_ORIGIN or CORS_ORIGINS; http://localhost:3000 in dev).
  *
  * Covers: sign-up by SMS code → first workspace → project → invitation by SMS → the invitee
  * joins through the link → a task created, assigned and completed by one person appears and
@@ -15,8 +16,10 @@
  * hydration mismatches included — fails the run.
  */
 import { readFileSync, statSync } from 'node:fs';
-import { base, check, eventually, finish, launch, out, visible, watchConsole } from '../lib/harness.mjs';
+import { check, eventually, finish, launch, out, visible, watchConsole } from '../lib/harness.mjs';
 
+/** The API accepts its cookie routes (refresh, sign-out) only from its web origin: PUBLIC_WEB_ORIGIN or CORS_ORIGINS. */
+const base = process.env.BASE_URL ?? 'http://localhost:3000';
 const apiLog = process.env.API_LOG;
 if (!apiLog) {
   console.error('Set API_LOG to the file the API logs to: the console SMS driver writes sign-in codes and invitation links there.');

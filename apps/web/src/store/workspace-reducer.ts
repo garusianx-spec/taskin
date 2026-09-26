@@ -1169,6 +1169,7 @@ function syncReducer(state: WorkspaceState, action: SyncAction): WorkspaceState 
         ...state,
         projects: upsert(state.projects, project, replaceId, true),
         tasks: state.tasks.map((task) => (task.projectId === replaceId ? { ...task, projectId: project.id } : task)),
+        projectFilterId: state.projectFilterId === replaceId ? project.id : state.projectFilterId,
       };
     }
 

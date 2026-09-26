@@ -99,7 +99,8 @@ first workspace, a project, an SMS invitation accepted through its link, a task 
 assigned by one person and completed live on the other's board, a direct chat with delivery,
 typing, read receipts and ❤️ / 👎 reactions, the notification quick views and «علامت‌گذاری همه
 به‌عنوان خوانده‌شده», and sign-out from the profile menu. It reads codes and links from
-`API_LOG` (the API's log file) and targets `BASE_URL` (default `http://localhost:3100`); any
+`API_LOG` (the API's log file) and targets `BASE_URL` (default `http://localhost:3000`, which
+must be an origin the API allows: its `PUBLIC_WEB_ORIGIN` or `CORS_ORIGINS`); any
 console error or warning, hydration mismatches included, fails it. CI runs it against the
 Compose API and a production build of the web app.
 
