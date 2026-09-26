@@ -1222,3 +1222,54 @@ M3 follows this RFC except where noted below. As in Addenda A and B, each entry 
 - **Met:** 10,000 sockets per node with no drops, 100% delivery, and REST p95 under 200 ms during the chat load.
 - **Latency targets:** met at 250 messages per second in one run; the other run missed ack p95 by 6 ms (156 ms).
 - **Not met: 500 messages per second.** The host saturates at about 430, with sends queueing for seconds. The measured CPU per message is about 2.3 ms in PostgreSQL and 3.2 ms across the WebSocket nodes. From those numbers we estimate, without having measured it, that 500 messages per second needs roughly 1.2 cores of PostgreSQL and 1.6 of WebSocket nodes. That capacity check has to be repeated on hardware laid out as §2 describes.
+
+## Addendum D. Implementation notes (M4: bridge, media and the live web app)
+
+M4 so far connects the web app to the API (the live data source) and adds the message-to-task bridge, media uploads and subtask ordering. As in the earlier addenda, each entry says what changed and why.
+
+**Message → task (§4.1)**
+
+| RFC | Implemented | Why |
+| --- | --- | --- |
+| `POST …/conversations/:cid/messages/:mid/task`, idempotent | As specified. The task, its links and the system line are one transaction; one live task per message through the partial unique index, so two people converting at once get the same task (`200`, `existing: true`) | — |
+| Attachments not of the message: 422 | `400 VALIDATION_FAILED` on `attachmentIds` | The same shape as every other body check; the file may have been uploaded by anyone, as long as it is the message's own |
+| — | A system message cannot be converted: `422 MESSAGE_NOT_CONVERTIBLE`; a deleted one is `410 MESSAGE_GONE` | A system line has no author or content to make a task of |
+| `message:task_linked` through the outbox relay | Emitted by the request after commit, durable in the workspace's event stream | Like chat sends: the chip must appear at once, and a client that missed it gets it on `sync:resume` |
+| System line on conversion (step 7) | Written in the same transaction, `{type: 'message_converted', params: {messageId, taskId, code, actorId}}`; groups and channels only, when `settings.systemMessageOnConvert` | Direct chats stay private, as §4.1 says |
+| — | `TaskDetail.sourceMessage`: where the task came from. People who cannot read that conversation learn only that there is a source message | The task drawer's «پیام مبدأ» link needs the conversation, and must not leak it |
+
+Locks are taken in the order project → column → task → conversation (the system line last), which is §4.1's own step order. No other path locks a conversation before a column.
+
+**Subtasks**
+
+- **New route.** `POST /tasks/:id/subtasks/:sid/move {afterId, beforeId}` uses the board's fractional keys.
+  - The task's subtasks are locked for the move, so reorders of one list queue.
+  - Keys longer than 50 characters rewrite the whole list in the same transaction.
+  - A stale list gets `409 SUBTASKS_CHANGED`.
+- **Live updates.** Subtask changes do not bump the task's `version`, so a ticked checkbox never makes someone's title edit stale. Instead they emit `task.updated` with `fields: ['subtasks']`, and clients refetch on it.
+
+**Files**
+
+- **New route.** `GET /files/:id/link?disposition=inline|attachment` returns a signed URL as JSON, because `<img>`, `<audio>` and `<video>` cannot send a bearer token.
+  - `inline` is granted only to sniffed images, audio and video (SVG sniffs as text), for 15 minutes.
+  - Everything else is a 5-minute download, which is audited.
+  - Inline views are not audited: a thread of thumbnails would flood the audit log.
+- **Chat files are readable by the conversation's members** (and by readers of a public channel). §11 named only the uploader and the task's viewers, which left recipients unable to open what they were sent.
+- **Sniffing reads the first 4 KB** instead of 64 bytes. An audio-only WebM, which is what browsers record voice notes as, is `audio/webm`; a WebM with a video track stays video.
+- **Uploads go from the browser straight to storage**, so the bucket's CORS must allow the web origin. For multipart uploads it must also expose `ETag`.
+  - SeaweedFS in development reflects any origin.
+  - In production the MinIO or Arvan bucket must list the app's origin.
+- **Workspace icons** use the M1 ticket: the web app uploads the picked image, then creates the workspace with its key.
+
+**The web app (live data source)**
+
+- **Data flow.** The reducer the screens were built on stays; a live store fills it and sends each action to the API, with optimistic updates and server truth applied as `sync/*` actions. Socket events are buffered while the workspace loads. The README's "Live app" section has the details.
+- **Tokens.** The access token is kept in memory; the refresh cookie is refreshed a minute before expiry. Uploads and file links use the same session.
+- **Voice notes.** They are recorded with `MediaRecorder` (WebM/Opus, falling back to Ogg or MP4). The waveform is 64 bars sampled from an `AnalyserNode` while recording.
+- **Tests.** The live end-to-end suite runs Chromium with a fake microphone and under a UTF-8 locale. On Linux, Chromium names a download after its Persian `filename*` only when the locale can spell it.
+
+**Still open from §15 (M4)**
+
+- Project ↔ channel links with membership sync and task digests.
+- Search and the message search lookup, link previews, and the audit-log query API.
+- The one-hour soak, the restore drill, and the dashboards and alerts.

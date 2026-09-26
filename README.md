@@ -94,11 +94,21 @@ load, so events that arrive meanwhile wait and are applied after it; after a rec
 is an HttpOnly cookie, refreshed a minute before the access token expires and once more on a
 `401`. Signing out revokes the session on the server and clears both.
 
+**Files.** Uploads go from the browser straight to object storage with the presigned POST (or
+multipart parts above 16 MB) the API plans; the API then checks the stored bytes. The bucket must
+therefore allow the web origin by CORS (and expose `ETag` for multipart); SeaweedFS in development
+reflects any origin. Stored files open through short-lived links from
+`GET /files/:id/link`: images, audio and video in place, everything else as a download under its
+own (Persian) name.
+
 **Live end to end.** `npm run test:e2e:live` drives two browsers through one workspace: sign-up,
 first workspace, a project, an SMS invitation accepted through its link, a task created and
 assigned by one person and completed live on the other's board, a direct chat with delivery,
 typing, read receipts and ❤️ / 👎 reactions, the notification quick views and «علامت‌گذاری همه
-به‌عنوان خوانده‌شده», and sign-out from the profile menu. It reads codes and links from
+به‌عنوان خوانده‌شده», and sign-out from the profile menu. It also sends a file, an image and a
+voice note (from a fake microphone), checks the shared-media tabs, turns a message into a task and
+follows «پیام مبدأ» back to it, reorders subtasks, attaches a file to the task and creates a
+workspace with an uploaded icon — each checked again after a reload. It reads codes and links from
 `API_LOG` (the API's log file) and targets `BASE_URL` (default `http://localhost:3000`, which
 must be an origin the API allows: its `PUBLIC_WEB_ORIGIN` or `CORS_ORIGINS`); any
 console error or warning, hydration mismatches included, fails it. CI runs it against the
@@ -453,15 +463,11 @@ the message text and any attachment. Verified: zero horizontal overflow on every
 ## What is not wired yet
 
 The live app persists and synchronises what the screens do through the API: sign-in and
-sessions, workspaces, invitations, roles and permissions, projects, the board and its columns,
-tasks with subtasks and comments, chat (messages, reactions, read receipts, typing, pins and
-mutes), the calendar, notes, notifications and presence. What still stays in the browser:
+sessions, workspaces (with their icons), invitations, roles and permissions, projects, the board
+and its columns, tasks with ordered subtasks, comments and files, chat (messages, files and voice
+notes, reactions, read receipts, typing, pins and mutes, the shared-media tabs, and messages
+turned into tasks), the calendar, notes, notifications and presence. What is still missing:
 
-- **Files.** Nothing uploads yet: workspace icons (the upload is hidden in the live app; the
-  monogram is used), chat attachments and voice notes, task attachments.
-- **Subtask order.** Reordering subtasks is local; the API has no endpoint for it yet.
-- **Message → task.** A task converted from a chat message is created, but its link back to the
-  message waits for the bridge endpoint (M4 in RFC 0001).
 - **«نامرئی».** The server derives offline from connectivity, so the invisible status is stored
   as «خارج از دسترس».
 - **Two-step sign-in.** The SMS code is already the first factor, so the live security dialog
