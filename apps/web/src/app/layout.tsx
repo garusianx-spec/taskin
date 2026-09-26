@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
 import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/theme';
+import { DATA_SOURCE } from '@/lib/data-source';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import { WorkspaceProvider } from '@/store/WorkspaceProvider';
 import { OverlayProvider } from '@/components/overlays/OverlayProvider';
@@ -29,7 +30,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { readonly children: ReactNode }) {
   return (
-    <html lang="fa" dir="rtl" suppressHydrationWarning>
+    // `data-source` tells tooling which build this is (`api` or `demo`); it is inlined at build time.
+    <html lang="fa" dir="rtl" data-source={DATA_SOURCE} suppressHydrationWarning>
       <head>
         {/*
           Applies data-theme / data-accent before first paint so a hard navigation never

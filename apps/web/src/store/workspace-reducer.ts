@@ -19,7 +19,9 @@ import type {
   PermissionActionId,
   PermissionMatrix,
   PermissionModuleId,
+  PresenceState,
   ProfileSettings,
+  Project,
   RoleId,
   SessionStatus,
   SmartViewId,
@@ -29,6 +31,7 @@ import type {
   TaskPlacement,
   TaskStatus,
   TaskViewMode,
+  User,
   Workspace,
   WorkspaceDraft,
 } from '@taskin/contracts';
@@ -47,6 +50,13 @@ import { monogram } from '@taskin/text';
 
 export interface WorkspaceState {
   readonly session: SessionStatus;
+  /** The signed-in member. */
+  readonly meId: string;
+  /** Everyone in the active workspace (the directory), and its projects. */
+  readonly users: readonly User[];
+  readonly projects: readonly Project[];
+  /** Who is typing where right now; cleared by the server's stop or after a few seconds. */
+  readonly typingByConversation: Readonly<Record<string, readonly string[]>>;
   readonly workspaces: readonly Workspace[];
   readonly activeWorkspaceId: string;
   /** Scoped data of the workspaces not on screen, restored when switched back to. */
@@ -120,6 +130,7 @@ export type WorkspaceAction =
   | { readonly type: 'clear-calendar-focus' }
   | { readonly type: 'create-note'; readonly noteId: string; readonly categoryId: string }
   | { readonly type: 'create-note-category'; readonly categoryId: string; readonly label: string }
+  | { readonly type: 'create-project'; readonly projectId: string; readonly draft: ProjectDraft; readonly ownerId: string }
   | { readonly type: 'delete-note-category'; readonly categoryId: string }
   | { readonly type: 'update-note'; readonly noteId: string; readonly patch: NotePatch }
   | { readonly type: 'delete-note'; readonly noteId: string }
@@ -133,8 +144,21 @@ export type WorkspaceAction =
   | { readonly type: 'revoke-login-session'; readonly sessionId: string }
   | { readonly type: 'revoke-other-login-sessions' }
   | { readonly type: 'switch-workspace'; readonly workspaceId: string }
-  | { readonly type: 'create-workspace'; readonly workspaceId: string; readonly draft: WorkspaceDraft; readonly ownerId: string }
-  | { readonly type: 'delete-workspace'; readonly workspaceId: string; readonly actorId: string }
+  | {
+      readonly type: 'create-workspace';
+      readonly workspaceId: string;
+      readonly draft: WorkspaceDraft;
+      readonly ownerId: string;
+      /** Live only: an owner's admin password, set before the workspace is created when there is none yet. */
+      readonly adminPassword?: string;
+    }
+  | {
+      readonly type: 'delete-workspace';
+      readonly workspaceId: string;
+      readonly actorId: string;
+      /** Live only: the admin password that re-verifies the owner (step-up) before deleting. */
+      readonly password?: string;
+    }
   | { readonly type: 'sign-out' }
   | { readonly type: 'sign-in' }
   | { readonly type: 'set-permission'; readonly role: RoleId; readonly module: PermissionModuleId; readonly action: PermissionActionId; readonly value: boolean }
@@ -142,7 +166,31 @@ export type WorkspaceAction =
   | { readonly type: 'set-action-permissions'; readonly role: RoleId; readonly action: PermissionActionId; readonly value: boolean }
   | { readonly type: 'set-role-permissions'; readonly role: RoleId; readonly value: boolean }
   | { readonly type: 'replace-permissions'; readonly permissions: PermissionMatrix }
-  | { readonly type: 'announce'; readonly message: string };
+  | { readonly type: 'announce'; readonly message: string }
+  | SyncAction;
+
+/**
+ * What the server says, applied as it arrives: API responses replacing optimistic entries (a local
+ * id swapped for the server's), and realtime events from everyone else. Never sent to the API.
+ */
+export type SyncAction =
+  | { readonly type: 'sync/merge'; readonly patch: Partial<WorkspaceState> }
+  | { readonly type: 'sync/upsert-task'; readonly task: Task; readonly replaceId?: string }
+  | { readonly type: 'sync/remove-task'; readonly taskId: string }
+  | { readonly type: 'sync/upsert-conversation'; readonly conversation: Conversation; readonly replaceId?: string; readonly select?: boolean }
+  | { readonly type: 'sync/remove-conversation'; readonly conversationId: string }
+  | { readonly type: 'sync/upsert-messages'; readonly messages: readonly Message[]; readonly replaceId?: string }
+  | { readonly type: 'sync/remove-message'; readonly messageId: string }
+  | { readonly type: 'sync/reaction'; readonly messageId: string; readonly emoji: string; readonly userIds: readonly string[] }
+  | { readonly type: 'sync/read'; readonly userId: string; readonly messageIds: readonly string[] }
+  | { readonly type: 'sync/unread'; readonly conversationId: string; readonly count: number }
+  | { readonly type: 'sync/typing'; readonly conversationId: string; readonly userId: string; readonly typing: boolean }
+  | { readonly type: 'sync/upsert-notification'; readonly notification: AppNotification }
+  | { readonly type: 'sync/upsert-event'; readonly event: CalendarEvent; readonly replaceId?: string }
+  | { readonly type: 'sync/upsert-note'; readonly note: Note; readonly replaceId?: string }
+  | { readonly type: 'sync/upsert-note-category'; readonly category: NoteCategory; readonly replaceId?: string }
+  | { readonly type: 'sync/upsert-project'; readonly project: Project; readonly replaceId?: string }
+  | { readonly type: 'sync/presence'; readonly userId: string; readonly presence: PresenceState };
 
 /** What happens to the cards of a column being deleted. Irrelevant when it is empty. */
 export type ColumnDisposition =
@@ -156,6 +204,15 @@ export interface ConversationDraft {
   /** Every member, the author included. */
   readonly memberIds: readonly string[];
   readonly tone: AvatarTone;
+}
+
+export interface ProjectDraft {
+  readonly name: string;
+  /** Short Latin key, the prefix of the project's task codes (`CRM-104`). */
+  readonly key: string;
+  readonly color: AvatarTone;
+  readonly departmentId: DepartmentId;
+  readonly description: string;
 }
 
 export interface InvitationDraft {
@@ -702,6 +759,21 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       return { ...state, notes: [note, ...state.notes] };
     }
 
+    case 'create-project': {
+      const name = action.draft.name.trim();
+      if (!name) return state;
+      const project: Project = {
+        id: action.projectId,
+        name,
+        departmentId: action.draft.departmentId,
+        color: action.draft.color,
+        starred: false,
+        parentId: null,
+        memberIds: [action.ownerId],
+      };
+      return { ...state, projects: [...state.projects, project], announcement: `پروژه «${name}» ایجاد شد.` };
+    }
+
     case 'create-note-category': {
       const label = action.label.trim();
       if (!label || state.noteCategories.some((category) => category.label.trim() === label)) return state;
@@ -932,9 +1004,187 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     case 'announce':
       return { ...state, announcement: action.message };
 
+    case 'sync/merge':
+    case 'sync/upsert-task':
+    case 'sync/remove-task':
+    case 'sync/upsert-conversation':
+    case 'sync/remove-conversation':
+    case 'sync/upsert-messages':
+    case 'sync/remove-message':
+    case 'sync/reaction':
+    case 'sync/read':
+    case 'sync/unread':
+    case 'sync/typing':
+    case 'sync/upsert-notification':
+    case 'sync/upsert-event':
+    case 'sync/upsert-note':
+    case 'sync/upsert-note-category':
+    case 'sync/upsert-project':
+    case 'sync/presence':
+      return syncReducer(state, action);
+
     default: {
       const exhaustive: never = action;
       return exhaustive;
     }
+  }
+}
+
+/** Replaces the entry with `replaceId` (or the same id), or adds it to the front. */
+function upsert<T extends { readonly id: string }>(items: readonly T[], item: T, replaceId?: string, atEnd = false): readonly T[] {
+  const matchId = replaceId ?? item.id;
+  let found = false;
+  const next: T[] = [];
+  for (const entry of items) {
+    if (entry.id === matchId || entry.id === item.id) {
+      if (!found) next.push(item);
+      found = true;
+    } else {
+      next.push(entry);
+    }
+  }
+  if (found) return next;
+  return atEnd ? [...items, item] : [item, ...items];
+}
+
+const byTime = (a: Message, b: Message): number => a.sentAt.localeCompare(b.sentAt);
+
+function syncReducer(state: WorkspaceState, action: SyncAction): WorkspaceState {
+  switch (action.type) {
+    case 'sync/merge':
+      return { ...state, ...action.patch };
+
+    case 'sync/upsert-task': {
+      const { task, replaceId } = action;
+      const swap = (id: string): string => (replaceId !== undefined && id === replaceId ? task.id : id);
+      const inArchive = state.archivedTasks.some((entry) => entry.id === task.id);
+      return {
+        ...state,
+        tasks: inArchive ? state.tasks : upsert(state.tasks, task, replaceId),
+        inspector: state.inspector.kind === 'task' ? { kind: 'task', taskId: swap(state.inspector.taskId) } : state.inspector,
+        messages: replaceId === undefined ? state.messages : state.messages.map((message) => (message.linkedTaskId === replaceId ? { ...message, linkedTaskId: task.id } : message)),
+        notes: replaceId === undefined ? state.notes : state.notes.map((note) => (note.linkedTaskId === replaceId ? { ...note, linkedTaskId: task.id } : note)),
+      };
+    }
+
+    case 'sync/remove-task':
+      return {
+        ...state,
+        tasks: state.tasks.filter((task) => task.id !== action.taskId),
+        inspector: state.inspector.kind === 'task' && state.inspector.taskId === action.taskId ? { kind: 'none' } : state.inspector,
+      };
+
+    case 'sync/upsert-conversation': {
+      const { conversation, replaceId } = action;
+      const swap = (id: string): string => (replaceId !== undefined && id === replaceId ? conversation.id : id);
+      const unread = { ...state.unreadByConversation };
+      if (replaceId !== undefined && replaceId in unread) delete unread[replaceId];
+      if (!(conversation.id in unread) || action.select) unread[conversation.id] = action.select ? 0 : conversation.unreadCount;
+      const pinned = state.pinnedConversationIds.filter((id) => id !== replaceId && id !== conversation.id);
+      const muted = state.mutedConversationIds.filter((id) => id !== replaceId && id !== conversation.id);
+      return {
+        ...state,
+        conversations: upsert(state.conversations, conversation, replaceId),
+        messages: replaceId === undefined ? state.messages : state.messages.map((message) => (message.conversationId === replaceId ? { ...message, conversationId: conversation.id } : message)),
+        unreadByConversation: unread,
+        pinnedConversationIds: conversation.pinned ? [...pinned, conversation.id] : pinned,
+        mutedConversationIds: conversation.muted ? [...muted, conversation.id] : muted,
+        activeConversationId: action.select ? conversation.id : swap(state.activeConversationId),
+        inspector: state.inspector.kind === 'conversation' ? { kind: 'conversation', conversationId: swap(state.inspector.conversationId) } : state.inspector,
+      };
+    }
+
+    case 'sync/remove-conversation': {
+      const conversations = state.conversations.filter((conversation) => conversation.id !== action.conversationId);
+      const unread = Object.fromEntries(Object.entries(state.unreadByConversation).filter(([id]) => id !== action.conversationId));
+      return {
+        ...state,
+        conversations,
+        messages: state.messages.filter((message) => message.conversationId !== action.conversationId),
+        unreadByConversation: unread,
+        activeConversationId: state.activeConversationId === action.conversationId ? (conversations[0]?.id ?? '') : state.activeConversationId,
+        inspector: state.inspector.kind === 'conversation' && state.inspector.conversationId === action.conversationId ? { kind: 'none' } : state.inspector,
+      };
+    }
+
+    case 'sync/upsert-messages': {
+      let messages = state.messages;
+      for (const message of action.messages) messages = upsert(messages, message, action.replaceId, true);
+      return { ...state, messages: [...messages].sort(byTime) };
+    }
+
+    case 'sync/remove-message':
+      return { ...state, messages: state.messages.filter((message) => message.id !== action.messageId) };
+
+    case 'sync/reaction':
+      return {
+        ...state,
+        messages: state.messages.map((message) => {
+          if (message.id !== action.messageId) return message;
+          const others = message.reactions.filter((reaction) => reaction.emoji !== action.emoji);
+          const at = message.reactions.findIndex((reaction) => reaction.emoji === action.emoji);
+          if (action.userIds.length === 0) return { ...message, reactions: others };
+          const next = { emoji: action.emoji, userIds: action.userIds };
+          if (at === -1) return { ...message, reactions: [...others, next] };
+          return { ...message, reactions: message.reactions.map((reaction, index) => (index === at ? next : reaction)) };
+        }),
+      };
+
+    case 'sync/read': {
+      const ids = new Set(action.messageIds);
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          ids.has(message.id) && !message.readByIds.includes(action.userId) ? { ...message, readByIds: [...message.readByIds, action.userId] } : message,
+        ),
+      };
+    }
+
+    case 'sync/unread':
+      return { ...state, unreadByConversation: { ...state.unreadByConversation, [action.conversationId]: action.count } };
+
+    case 'sync/typing': {
+      const current = state.typingByConversation[action.conversationId] ?? [];
+      const has = current.includes(action.userId);
+      if (has === action.typing) return state;
+      const next = action.typing ? [...current, action.userId] : current.filter((id) => id !== action.userId);
+      return { ...state, typingByConversation: { ...state.typingByConversation, [action.conversationId]: next } };
+    }
+
+    case 'sync/upsert-notification':
+      return { ...state, notifications: upsert(state.notifications, action.notification) };
+
+    case 'sync/upsert-event':
+      return { ...state, calendarEvents: upsert(state.calendarEvents, action.event, action.replaceId, true) };
+
+    case 'sync/upsert-note': {
+      const { note, replaceId } = action;
+      return { ...state, notes: upsert(state.notes, note, replaceId) };
+    }
+
+    case 'sync/upsert-project': {
+      const { project, replaceId } = action;
+      if (replaceId === undefined) return { ...state, projects: upsert(state.projects, project, undefined, true) };
+      return {
+        ...state,
+        projects: upsert(state.projects, project, replaceId, true),
+        tasks: state.tasks.map((task) => (task.projectId === replaceId ? { ...task, projectId: project.id } : task)),
+      };
+    }
+
+    case 'sync/upsert-note-category': {
+      const { category, replaceId } = action;
+      return {
+        ...state,
+        noteCategories: upsert(state.noteCategories, category, replaceId, true),
+        notes: replaceId === undefined ? state.notes : state.notes.map((note) => (note.categoryId === replaceId ? { ...note, categoryId: category.id } : note)),
+      };
+    }
+
+    case 'sync/presence':
+      return {
+        ...state,
+        users: state.users.map((user) => (user.id === action.userId && user.presence !== action.presence ? { ...user, presence: action.presence } : user)),
+      };
   }
 }

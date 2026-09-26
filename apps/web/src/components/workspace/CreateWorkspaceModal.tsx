@@ -3,6 +3,7 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import type { AvatarTone, WorkspaceDraft } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
+import { toPersianDigits } from '@taskin/jalali';
 import { monogram } from '@taskin/text';
 import { formatFileSize } from '@/lib/format';
 import { useNamespacedId } from '@/hooks/useId';
@@ -15,8 +16,15 @@ import { WORKSPACE_TONES, WorkspaceAvatar } from './WorkspaceAvatar';
 export interface CreateWorkspaceModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
-  readonly onSubmit: (draft: WorkspaceDraft) => void;
+  /** `adminPassword` is set when `requirePassword` asked for one. */
+  readonly onSubmit: (draft: WorkspaceDraft, adminPassword?: string) => void;
+  /** The account has no admin password yet, and owning a workspace needs one. */
+  readonly requirePassword?: boolean;
+  /** Offer an uploaded image as the icon (the live app shows the monogram until uploads land). */
+  readonly allowIcon?: boolean;
 }
+
+const MIN_PASSWORD = 8;
 
 const MAX_ICON_BYTES = 1024 * 1024;
 const TONE_LABELS: Readonly<Record<AvatarTone, string>> = {
@@ -33,8 +41,9 @@ const TONE_LABELS: Readonly<Record<AvatarTone, string>> = {
  * is a two-letter monogram generated from the name as it is typed, on the chosen colour.
  * On submit the workspace is registered and becomes the active one.
  */
-export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspaceModalProps) {
+export function CreateWorkspaceModal({ open, onClose, onSubmit, requirePassword = false, allowIcon = true }: CreateWorkspaceModalProps) {
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [description, setDescription] = useState('');
   const [tone, setTone] = useState<AvatarTone>('brand');
   const [iconUrl, setIconUrl] = useState<string | null>(null);
@@ -51,6 +60,7 @@ export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspac
 
   useResetOnOpen(open, () => {
     setName('');
+    setPassword('');
     setDescription('');
     setTone('brand');
     setIconUrl(null);
@@ -59,6 +69,8 @@ export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspac
   });
 
   const nameError = touched && !name.trim() ? 'نام فضای کاری الزامی است.' : undefined;
+  const passwordError =
+    requirePassword && touched && password.length < MIN_PASSWORD ? `رمز مدیر دست‌کم ${toPersianDigits(MIN_PASSWORD)} نویسه باشد.` : undefined;
 
   const onPickIcon = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -81,8 +93,10 @@ export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspac
 
   const submit = () => {
     setTouched(true);
-    if (!name.trim()) return;
-    onSubmit({ name: name.trim(), description: description.trim(), tone, iconUrl });
+    if (!name.trim() || (requirePassword && password.length < MIN_PASSWORD)) return;
+    const draft = { name: name.trim(), description: description.trim(), tone, iconUrl: allowIcon ? iconUrl : null };
+    if (requirePassword) onSubmit(draft, password);
+    else onSubmit(draft);
   };
 
   const preview = { name, initials: monogram(name || 'فضای کاری'), tone, iconUrl };
@@ -111,35 +125,39 @@ export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspac
             <span className="truncate text-body-sm font-semibold text-fg-primary">
               {name.trim() || 'نام فضای کاری'}
             </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                id={`${id}-icon`}
-                onChange={onPickIcon}
-              />
-              <Button
-                size="xs"
-                variant="secondary"
-                iconStart={<ImageIcon size={14} />}
-                onClick={() => fileRef.current?.click()}
-              >
-                {iconUrl ? 'تغییر تصویر' : 'بارگذاری تصویر'}
-              </Button>
-              {iconUrl && (
-                <Button size="xs" variant="ghost" iconStart={<TrashIcon size={14} />} onClick={() => setIconUrl(null)}>
-                  حذف تصویر
+            {allowIcon && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  id={`${id}-icon`}
+                  onChange={onPickIcon}
+                />
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  iconStart={<ImageIcon size={14} />}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {iconUrl ? 'تغییر تصویر' : 'بارگذاری تصویر'}
                 </Button>
-              )}
-            </div>
+                {iconUrl && (
+                  <Button size="xs" variant="ghost" iconStart={<TrashIcon size={14} />} onClick={() => setIconUrl(null)}>
+                    حذف تصویر
+                  </Button>
+                )}
+              </div>
+            )}
             {iconError ? (
               <p className="text-caption text-status-blocked" role="alert">
                 {iconError}
               </p>
             ) : (
-              <p className="text-micro text-fg-tertiary">بدون تصویر، دو حرف اول نام به‌عنوان نشان نمایش داده می‌شود.</p>
+              <p className="text-micro text-fg-tertiary">
+                {allowIcon ? 'بدون تصویر، دو حرف اول نام به‌عنوان نشان نمایش داده می‌شود.' : 'دو حرف اول نام به‌عنوان نشان نمایش داده می‌شود.'}
+              </p>
             )}
           </div>
         </div>
@@ -154,6 +172,20 @@ export function CreateWorkspaceModal({ open, onClose, onSubmit }: CreateWorkspac
           maxLength={40}
           data-autofocus
         />
+
+        {requirePassword && (
+          <Input
+            label="رمز مدیر"
+            type="password"
+            autoComplete="new-password"
+            dir="ltr"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            onBlur={() => setTouched(true)}
+            error={passwordError}
+            hint="مالک فضای کاری برای کارهای حساس، مانند حذف فضا یا تغییر دسترسی‌ها، این رمز را وارد می‌کند."
+          />
+        )}
 
         <Textarea
           label="توضیحات (اختیاری)"

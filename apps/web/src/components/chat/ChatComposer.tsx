@@ -10,6 +10,8 @@ export interface ChatComposerProps {
   readonly replyPreview: { readonly authorName: string; readonly preview: string } | null;
   readonly onCancelReply: () => void;
   readonly conversationTitle: string;
+  /** The draft became non-empty (`true`, repeated while typing) or empty again (`false`). */
+  readonly onTyping?: (active: boolean) => void;
 }
 
 const EMOJI_PALETTE = ['👍', '🙏', '🔥', '✅', '👀', '🎉', '❤️', '😀', '🤝', '⚡️'] as const;
@@ -18,7 +20,7 @@ const EMOJI_PALETTE = ['👍', '🙏', '🔥', '✅', '👀', '🎉', '❤️', 
  * Message composer. Enter sends, Shift+Enter inserts a newline, and the textarea grows with
  * the content up to six lines before scrolling.
  */
-export function ChatComposer({ onSend, replyPreview, onCancelReply, conversationTitle }: ChatComposerProps) {
+export function ChatComposer({ onSend, replyPreview, onCancelReply, conversationTitle, onTyping }: ChatComposerProps) {
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -115,6 +117,7 @@ export function ChatComposer({ onSend, replyPreview, onCancelReply, conversation
           onChange={(event) => {
             setDraft(event.target.value);
             resize(event.target);
+            onTyping?.(event.target.value.trim().length > 0);
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {

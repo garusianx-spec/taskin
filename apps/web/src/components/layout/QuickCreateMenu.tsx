@@ -2,7 +2,7 @@
 
 import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { MenuItem, MenuList } from '@/components/ui/Menu';
-import { CalendarIcon, MessagesIcon, TaskSquareIcon, UserAddIcon } from '@/components/icons';
+import { CalendarIcon, FolderAddIcon, MessagesIcon, TaskSquareIcon, UserAddIcon } from '@/components/icons';
 
 /**
  * Body of the (+) quick-create popover, shared by the desktop rail and the mobile top bar.
@@ -33,6 +33,9 @@ export function QuickCreateMenu({ close }: { readonly close: () => void }) {
       </MenuItem>
       <MenuItem onSelect={run(() => open({ kind: 'invite-member' }))} icon={<UserAddIcon size={18} />}>
         دعوت همکار
+      </MenuItem>
+      <MenuItem onSelect={run(() => open({ kind: 'project-composer' }))} icon={<FolderAddIcon size={18} />}>
+        پروژه جدید
       </MenuItem>
     </MenuList>
   );

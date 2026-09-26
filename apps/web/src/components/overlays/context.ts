@@ -13,6 +13,7 @@ export type Overlay =
   | { readonly kind: 'conversation-composer' }
   | { readonly kind: 'event-composer'; readonly date: string | null }
   | { readonly kind: 'invite-member' }
+  | { readonly kind: 'project-composer' }
   | { readonly kind: 'workspace-create' }
   | { readonly kind: 'workspace-settings' }
   | { readonly kind: 'workspace-delete'; readonly workspaceId: string }

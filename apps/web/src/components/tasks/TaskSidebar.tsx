@@ -6,10 +6,13 @@ import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { DEPARTMENTS } from '@/data/reference';
 import { buildProjectTree, projectWithDescendants } from '@/store/selectors';
+import { IconButton } from '@/components/ui';
 import {
+  AddIcon,
   BriefcaseIcon,
   ChevronDownIcon,
   ClockIcon,
+  FolderAddIcon,
   FolderIcon,
   StarIcon,
   TaskSquareIcon,
@@ -23,6 +26,7 @@ export interface TaskSidebarProps {
   readonly currentUserId: string;
   readonly onSmartViewChange: (view: SmartViewId) => void;
   readonly onProjectChange: (projectId: string | null) => void;
+  readonly onCreateProject?: () => void;
 }
 
 const SMART_VIEWS: ReadonlyArray<{
@@ -47,6 +51,7 @@ export function TaskSidebar({
   currentUserId,
   onSmartViewChange,
   onProjectChange,
+  onCreateProject,
 }: TaskSidebarProps) {
   const tree = buildProjectTree();
   const [expanded, setExpanded] = useState<readonly string[]>(tree.map((node) => node.project.id));
@@ -122,9 +127,22 @@ export function TaskSidebar({
         <div className="my-3 border-t border-secondary" />
 
         <nav aria-label="درخت پروژه‌ها" className="flex flex-col gap-0.5">
-          <h3 className="px-2.5 pb-1 text-micro font-semibold uppercase tracking-wide text-fg-quaternary">
-            پروژه‌ها
-          </h3>
+          <div className="flex items-center justify-between gap-2 ps-2.5 pb-1">
+            <h3 className="text-micro font-semibold uppercase tracking-wide text-fg-quaternary">پروژه‌ها</h3>
+            {onCreateProject && (
+              <IconButton label="پروژه جدید" size="xs" variant="ghost" icon={<AddIcon size={14} />} onClick={onCreateProject} />
+            )}
+          </div>
+          {visibleTree.length === 0 && onCreateProject && (
+            <button
+              type="button"
+              onClick={onCreateProject}
+              className="mx-1 flex items-center gap-2 rounded-lg border border-dashed border-secondary px-2.5 py-2 text-start text-caption font-medium text-fg-tertiary transition-colors hover:bg-hover"
+            >
+              <FolderAddIcon size={16} />
+              نخستین پروژه را بسازید
+            </button>
+          )}
 
           {visibleTree.map(({ project, children }) => {
             const isExpanded = expanded.includes(project.id);

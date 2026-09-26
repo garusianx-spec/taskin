@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { AvatarTone, Conversation, User } from '@taskin/contracts';
 import type { ConversationDraft } from '@/store/workspace-reducer';
-import { USERS } from '@/data/workspace';
+import { directory } from '@/store/directory';
 import { DEPARTMENTS } from '@/data/reference';
 import { cn } from '@/lib/cn';
 import { formatCount, seededUnit } from '@/lib/format';
@@ -65,14 +65,15 @@ export function NewConversationModal({
     setTouched(false);
   });
 
+  const people = directory.users();
   const colleagues = useMemo(() => {
     const normalised = query.trim().toLowerCase();
-    return USERS.filter((user) => user.id !== currentUserId).filter((user) =>
+    return people.filter((user) => user.id !== currentUserId).filter((user) =>
       normalised
         ? `${user.fullName} ${user.jobTitle} ${departmentName(user)}`.toLowerCase().includes(normalised)
         : true,
     );
-  }, [query, currentUserId]);
+  }, [people, query, currentUserId]);
 
   const existingDirect = (userId: string): boolean =>
     conversations.some(
@@ -91,7 +92,7 @@ export function NewConversationModal({
   const submit = () => {
     setTouched(true);
     if (mode === 'direct') {
-      const user = USERS.find((entry) => entry.id === directId);
+      const user = directory.users().find((entry) => entry.id === directId);
       if (!user) return;
       onSubmit({
         kind: 'direct',
@@ -113,7 +114,7 @@ export function NewConversationModal({
     });
   };
 
-  const selectedDirect = USERS.find((user) => user.id === directId);
+  const selectedDirect = directory.users().find((user) => user.id === directId);
 
   return (
     <Modal

@@ -8,7 +8,9 @@ import { WarningIcon } from '@/components/icons';
 export interface DeleteWorkspaceModalProps {
   readonly workspace: Workspace | null;
   readonly onClose: () => void;
-  readonly onConfirm: () => void;
+  /** `password` is set when `requirePassword` asked for the admin password (step-up). */
+  readonly onConfirm: (password?: string) => void;
+  readonly requirePassword?: boolean;
 }
 
 /**
@@ -16,16 +18,24 @@ export interface DeleteWorkspaceModalProps {
  * workspace's exact name and acknowledges the consequence — two deliberate acts, so it can
  * never happen from a stray click or a reflexive Enter. The overlay does not dismiss it.
  */
-export function DeleteWorkspaceModal({ workspace, onClose, onConfirm }: DeleteWorkspaceModalProps) {
+export function DeleteWorkspaceModal({ workspace, onClose, onConfirm, requirePassword = false }: DeleteWorkspaceModalProps) {
   const [typed, setTyped] = useState('');
   const [acknowledged, setAcknowledged] = useState(false);
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
     setTyped('');
     setAcknowledged(false);
+    setPassword('');
   }, [workspace]);
 
   const matches = workspace !== null && typed.trim() === workspace.name;
+  const ready = matches && acknowledged && (!requirePassword || password.length > 0);
+  const confirm = () => {
+    if (!ready) return;
+    if (requirePassword) onConfirm(password);
+    else onConfirm();
+  };
 
   return (
     <Modal
@@ -43,7 +53,7 @@ export function DeleteWorkspaceModal({ workspace, onClose, onConfirm }: DeleteWo
           <Button variant="secondary" onClick={onClose}>
             انصراف
           </Button>
-          <Button variant="destructive" disabled={!matches || !acknowledged} onClick={onConfirm}>
+          <Button variant="destructive" disabled={!ready} onClick={confirm}>
             حذف دائمی
           </Button>
         </>
@@ -54,7 +64,7 @@ export function DeleteWorkspaceModal({ workspace, onClose, onConfirm }: DeleteWo
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (matches && acknowledged) onConfirm();
+            confirm();
           }}
         >
           <Input
@@ -66,6 +76,17 @@ export function DeleteWorkspaceModal({ workspace, onClose, onConfirm }: DeleteWo
             error={typed && !matches ? 'نام واردشده با نام فضای کاری یکسان نیست.' : undefined}
             data-autofocus
           />
+          {requirePassword && (
+            <Input
+              label="رمز مدیر"
+              type="password"
+              autoComplete="current-password"
+              dir="ltr"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              hint="برای این کار حساس، رمز مدیر دوباره پرسیده می‌شود."
+            />
+          )}
           <Checkbox
             checked={acknowledged}
             onCheckedChange={setAcknowledged}

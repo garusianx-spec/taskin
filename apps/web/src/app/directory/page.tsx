@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import type { DepartmentId, RoleId } from '@taskin/contracts';
-import { USERS } from '@/data/workspace';
 import { DEPARTMENTS, ROLES, roleLabel } from '@/data/reference';
 import { formatCount } from '@/lib/format';
 import { cn } from '@/lib/cn';
@@ -34,13 +33,13 @@ function DirectoryContent() {
   const members = useMemo(() => {
     const normalised = query.trim().toLowerCase();
     // The signed-in member's presence is edited from their profile, so it comes from state.
-    return USERS.map((user) => (user.id === currentUser.id ? currentUser : user)).filter((user) => {
+    return state.users.map((user) => (user.id === currentUser.id ? currentUser : user)).filter((user) => {
       if (department !== 'all' && user.department !== department) return false;
       if (role !== 'all' && user.role !== role) return false;
       if (!normalised) return true;
       return `${user.fullName} ${user.jobTitle} ${user.email}`.toLowerCase().includes(normalised);
     });
-  }, [query, department, role, currentUser]);
+  }, [state.users, query, department, role, currentUser]);
 
   return (
     <div className="scrollbar-thin h-full overflow-y-auto">
@@ -49,7 +48,7 @@ function DirectoryContent() {
           <div className="flex flex-col">
             <h1 className="text-heading-sm font-bold text-fg-primary">اعضای سازمان</h1>
             <span className="numeric text-caption text-fg-tertiary">
-              {`${formatCount(USERS.length)} نفر در ${formatCount(DEPARTMENTS.length)} دپارتمان`}
+              {`${formatCount(state.users.length)} نفر در ${formatCount(DEPARTMENTS.length)} دپارتمان`}
             </span>
           </div>
           <Button

@@ -1,8 +1,9 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useWorkspace } from '@/store/WorkspaceProvider';
+import { useLive, useWorkspace } from '@/store/WorkspaceProvider';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
+import { CreateProjectModal } from '@/components/tasks/CreateProjectModal';
 import { GlobalSearchModal } from '@/components/layout/GlobalSearchModal';
 import { NewConversationModal } from '@/components/chat/NewConversationModal';
 import { CalendarEventModal } from '@/components/calendar/CalendarEventModal';
@@ -28,6 +29,8 @@ export function OverlayHost() {
   const pathname = usePathname();
   const { state, dispatch, currentUser, activeWorkspace, isWorkspaceOwner } = useWorkspace();
   const { active, open, close } = useOverlays();
+  const live = useLive();
+  const hasPassword = live?.status.user?.hasPassword ?? false;
 
   const goTo = (href: string) => {
     if (!pathname.startsWith(href)) router.push(href);
@@ -49,10 +52,23 @@ export function OverlayHost() {
         open={active?.kind === 'task-composer'}
         draft={active?.kind === 'task-composer' ? active.draft : null}
         columns={state.boardColumns}
+        onCreateProject={() => open({ kind: 'project-composer' })}
         onClose={close}
         onSubmit={(draft) => {
           dispatch({ type: 'create-task', draft, authorId: currentUser.id });
           close();
+        }}
+      />
+
+      <CreateProjectModal
+        open={active?.kind === 'project-composer'}
+        projectCount={state.projects.length}
+        onClose={close}
+        onSubmit={(draft) => {
+          const projectId = nextLocalId('project');
+          dispatch({ type: 'create-project', projectId, draft, ownerId: currentUser.id });
+          close();
+          goTo('/tasks');
         }}
       />
 
@@ -93,13 +109,16 @@ export function OverlayHost() {
 
       <CreateWorkspaceModal
         open={active?.kind === 'workspace-create'}
+        requirePassword={live !== null && !hasPassword}
+        allowIcon={live === null}
         onClose={close}
-        onSubmit={(draft) => {
+        onSubmit={(draft, adminPassword) => {
           dispatch({
             type: 'create-workspace',
             workspaceId: nextLocalId('ws'),
             draft,
             ownerId: currentUser.id,
+            ...(adminPassword ? { adminPassword } : {}),
           });
           close();
           goTo('/feed');
@@ -118,13 +137,15 @@ export function OverlayHost() {
 
       <DeleteWorkspaceModal
         workspace={pendingDeletion}
+        requirePassword={live !== null}
         onClose={() => open({ kind: 'workspace-settings' })}
-        onConfirm={() => {
+        onConfirm={(password) => {
           if (!pendingDeletion) return;
           dispatch({
             type: 'delete-workspace',
             workspaceId: pendingDeletion.id,
             actorId: currentUser.id,
+            ...(password ? { password } : {}),
           });
           close();
           goTo('/feed');
@@ -154,6 +175,7 @@ export function OverlayHost() {
         onToggleTwoFactor={(enabled) => dispatch({ type: 'set-two-factor', enabled })}
         onRevokeSession={(sessionId) => dispatch({ type: 'revoke-login-session', sessionId })}
         onRevokeOtherSessions={() => dispatch({ type: 'revoke-other-login-sessions' })}
+        {...(live ? { live: { hasPassword, onChangePassword: (current, next) => live.store.changePassword(current, next) } } : {})}
       />
 
       <SignOutModal

@@ -16,18 +16,18 @@ import type {
   TaskStatus,
   User,
 } from '@taskin/contracts';
-import { PROJECTS, USERS } from '@/data/workspace';
+import { directory } from './directory';
 import { daysBetween, parseISODate, toISODate } from '@taskin/jalali';
 
 /* ------------------------------ People & projects ------------------------------ */
 
-export const userById = (id: string): User | undefined => USERS.find((user) => user.id === id);
+export const userById = (id: string): User | undefined => directory.users().find((user) => user.id === id);
 
 export const usersByIds = (ids: readonly string[]): User[] =>
   ids.map(userById).filter((user): user is User => user !== undefined);
 
 export const projectById = (id: string): Project | undefined =>
-  PROJECTS.find((project) => project.id === id);
+  directory.projects().find((project) => project.id === id);
 
 export const conversationById = (
   conversations: readonly Conversation[],
@@ -41,15 +41,15 @@ export interface ProjectNode {
 }
 
 export function buildProjectTree(): readonly ProjectNode[] {
-  return PROJECTS.filter((project) => project.parentId === null).map((project) => ({
+  return directory.projects().filter((project) => project.parentId === null).map((project) => ({
     project,
-    children: PROJECTS.filter((child) => child.parentId === project.id),
+    children: directory.projects().filter((child) => child.parentId === project.id),
   }));
 }
 
 /** A project id plus every descendant id — used when filtering the board by a parent. */
 export function projectWithDescendants(projectId: string): readonly string[] {
-  const children = PROJECTS.filter((project) => project.parentId === projectId).map((p) => p.id);
+  const children = directory.projects().filter((project) => project.parentId === projectId).map((p) => p.id);
   return [projectId, ...children];
 }
 
@@ -103,10 +103,13 @@ export const tasksByStatus = (tasks: readonly Task[], status: TaskStatus): reado
 export const taskById = (tasks: readonly Task[], id: string): Task | undefined =>
   tasks.find((task) => task.id === id);
 
-export const subtaskProgress = (task: Task): { readonly done: number; readonly total: number } => ({
-  done: task.subtasks.filter((subtask) => subtask.done).length,
-  total: task.subtasks.length,
-});
+export const subtaskProgress = (task: Task): { readonly done: number; readonly total: number } =>
+  task.summary
+    ? { done: task.summary.subtasksDone, total: task.summary.subtasks }
+    : { done: task.subtasks.filter((subtask) => subtask.done).length, total: task.subtasks.length };
+
+/** Files on a task, known from its list page before its detail is loaded. */
+export const attachmentCount = (task: Task): number => task.summary?.attachments ?? task.attachments.length;
 
 export const isOverdue = (task: Task, now: Date = new Date()): boolean =>
   task.status !== 'done' && daysBetween(now, parseISODate(task.dueDate)) < 0;

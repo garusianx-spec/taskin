@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { CalendarEventDraft, CalendarEventKind } from '@taskin/contracts';
 import { CALENDAR_EVENT_KINDS } from '@/data/reference';
-import { PROJECTS, USERS } from '@/data/workspace';
+import { directory } from '@/store/directory';
 import { useResetOnOpen } from '@/hooks/useResetOnOpen';
 import { formatJalali, toISODate, toPersianDigits } from '@taskin/jalali';
 import { Avatar, Button, Checkbox, Input, Modal, SegmentedControl, Select, Textarea } from '@/components/ui';
@@ -135,7 +135,7 @@ export function CalendarEventModal({ open, initialDate, currentUserId, onClose, 
               // the required field starts valid.
               projectId:
                 kind === 'milestone' && current.projectId === NO_PROJECT
-                  ? (PROJECTS[0]?.id ?? NO_PROJECT)
+                  ? (directory.projects()[0]?.id ?? NO_PROJECT)
                   : current.projectId,
             }))
           }
@@ -176,7 +176,7 @@ export function CalendarEventModal({ open, initialDate, currentUserId, onClose, 
               onValueChange={(projectId) => set('projectId', projectId)}
               options={[
                 ...(form.kind === 'milestone' ? [] : [{ value: NO_PROJECT, label: 'بدون پروژه' }]),
-                ...PROJECTS.map((project) => ({
+                ...directory.projects().map((project) => ({
                   value: project.id,
                   label: project.name,
                   ...(project.parentId ? { description: 'زیرپروژه' } : {}),
@@ -224,7 +224,7 @@ export function CalendarEventModal({ open, initialDate, currentUserId, onClose, 
               شرکت‌کنندگان
             </legend>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-              {USERS.map((user) => (
+              {directory.users().map((user) => (
                 <label
                   key={user.id}
                   className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-secondary px-2.5 py-2 transition-colors hover:bg-hover has-[[aria-checked=true]]:border-brand"

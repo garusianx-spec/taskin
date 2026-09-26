@@ -98,7 +98,7 @@ export function ProfileModal({ open, user, profile, onClose, onSave, onOpenSecur
 
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ProfileField label="ایمیل سازمانی">
-            <span className="latin-inline">{user.email}</span>
+            {user.email ? <span className="latin-inline">{user.email}</span> : <span className="text-fg-quaternary">ثبت نشده</span>}
           </ProfileField>
           <ProfileField label="تلفن همراه">
             <span className="numeric">{toPersianDigits(user.phone)}</span>

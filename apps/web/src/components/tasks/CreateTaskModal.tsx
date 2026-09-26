@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { BoardColumn, TaskDraft, TaskPriority } from '@taskin/contracts';
 import { TASK_PRIORITIES } from '@/data/reference';
-import { PROJECTS, USERS } from '@/data/workspace';
+import { directory } from '@/store/directory';
 import { formatFileSize } from '@/lib/format';
 import { formatJalali, toISODate } from '@taskin/jalali';
 import { useResetOnOpen } from '@/hooks/useResetOnOpen';
@@ -29,6 +29,8 @@ export interface CreateTaskModalProps {
   readonly columns: readonly BoardColumn[];
   readonly onClose: () => void;
   readonly onSubmit: (draft: TaskDraft) => void;
+  /** Offered when there is no project yet: every task belongs to one. */
+  readonly onCreateProject?: () => void;
 }
 
 const today = (): string => toISODate(new Date());
@@ -38,7 +40,7 @@ const today = (): string => toISODate(new Date());
  * cell; or pre-filled from a chat message ("تبدیل به وظیفه") or a note ("تبدیل یادداشت به
  * وظیفه") — in which case the source, attachments and checklist items ride along.
  */
-export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: CreateTaskModalProps) {
+export function CreateTaskModal({ open, draft, columns, onClose, onSubmit, onCreateProject }: CreateTaskModalProps) {
   const [form, setForm] = useState<TaskDraft>(() => taskDraft());
   const [touched, setTouched] = useState(false);
 
@@ -58,9 +60,12 @@ export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: Cre
   const presetDate = draft !== null && draft.dueDate !== null && !fromMessage && !fromNote;
   const titleError = touched && form.title.trim().length === 0 ? 'عنوان وظیفه الزامی است.' : undefined;
 
+  const projects = directory.projects();
+  const noProject = !projects.some((project) => project.id === form.projectId);
+
   const submit = () => {
     setTouched(true);
-    if (form.title.trim().length === 0) return;
+    if (form.title.trim().length === 0 || noProject) return;
     onSubmit({ ...form, title: form.title.trim(), dueDate: form.dueDate ?? today() });
   };
 
@@ -100,6 +105,16 @@ export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: Cre
       }
     >
       <div className="flex flex-col gap-4">
+        {projects.length === 0 && (
+          <div role="note" className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-secondary bg-sunken p-3 text-body-sm text-fg-secondary">
+            <span className="flex-1">هنوز پروژه‌ای در این فضای کاری نیست؛ هر وظیفه در یک پروژه ثبت می‌شود.</span>
+            {onCreateProject && (
+              <Button size="sm" variant="secondary" onClick={onCreateProject}>
+                ساخت پروژه
+              </Button>
+            )}
+          </div>
+        )}
         <Input
           label="عنوان وظیفه"
           value={form.title}
@@ -124,7 +139,7 @@ export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: Cre
             hideLabel={false}
             value={form.projectId}
             onValueChange={(projectId) => setForm((current) => ({ ...current, projectId }))}
-            options={PROJECTS.map((project) => ({
+            options={projects.map((project) => ({
               value: project.id,
               label: project.name,
               ...(project.parentId ? { description: 'زیرپروژه' } : {}),
@@ -177,7 +192,7 @@ export function CreateTaskModal({ open, draft, columns, onClose, onSubmit }: Cre
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-body-sm font-medium text-fg-secondary">مسئولان</legend>
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {USERS.map((user) => {
+            {directory.users().map((user) => {
               const checked = form.assigneeIds.includes(user.id);
               return (
                 <label

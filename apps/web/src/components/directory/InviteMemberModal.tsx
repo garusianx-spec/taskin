@@ -3,7 +3,7 @@
 import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import type { DepartmentId, Invitation, InvitationChannel, InvitationRecipient, RoleId } from '@taskin/contracts';
 import type { InvitationDraft } from '@/store/workspace-reducer';
-import { USERS } from '@/data/workspace';
+import { directory } from '@/store/directory';
 import { DEPARTMENTS, ROLES, roleLabel } from '@/data/reference';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
@@ -39,8 +39,9 @@ export const CHANNEL_ICONS: Readonly<Record<InvitationChannel, typeof SmsIcon>> 
 };
 
 /** Members' addresses, normalised, so an entry is recognised however it is written. */
-const MEMBER_EMAILS = new Set(USERS.map((user) => user.email.toLowerCase()));
-const MEMBER_MOBILES = new Set(USERS.map((user) => normaliseIranMobile(user.phone)).filter(Boolean));
+/** Addresses of people already in the workspace, read when a recipient is added. */
+const memberEmails = () => new Set(directory.users().map((user) => user.email.toLowerCase()));
+const memberMobiles = () => new Set(directory.users().map((user) => normaliseIranMobile(user.phone)).filter(Boolean));
 
 /** A rejected entry and why — rendered with the entry bidi-isolated inside Persian copy. */
 interface Problem {
@@ -91,7 +92,7 @@ export function InviteMemberModal({ open, invitations, onClose, onSubmit, onRevo
       }
       const { address, channel } = parsed.recipient;
       if ([...recipients, ...accepted].some((entry) => entry.address === address)) continue;
-      const members = channel === 'sms' ? MEMBER_MOBILES : MEMBER_EMAILS;
+      const members = channel === 'sms' ? memberMobiles() : memberEmails();
       if (members.has(address)) rejected.push({ token, reason: 'از قبل عضو سازمان است.' });
       else if (invitations.some((invitation) => invitation.address === address))
         rejected.push({ token, reason: 'دعوت‌نامه در انتظار دارد.' });

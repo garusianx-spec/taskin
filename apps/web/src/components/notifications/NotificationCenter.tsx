@@ -47,11 +47,26 @@ const EVENT_ICONS: Readonly<Record<NotificationEvent['kind'], typeof TaskSquareI
   reply: ReplyIcon,
 };
 
-const EMPTY_COPY: Readonly<Record<NotificationFilterId, { readonly title: string; readonly description: string }>> = {
+/** Narrower views the quick actions open on top of the tabs. */
+type QuickView = 'mentioned-messages' | 'assigned-today';
+
+const EMPTY_COPY: Readonly<Record<NotificationFilterId | QuickView, { readonly title: string; readonly description: string }>> = {
   all: { title: 'اعلانی ندارید', description: 'ارجاع وظایف، تغییر وضعیت‌ها و اشاره‌ها اینجا نمایش داده می‌شوند.' },
   unread: { title: 'همه اعلان‌ها را خوانده‌اید', description: 'اعلان تازه‌ای در انتظار شما نیست.' },
   mentions: { title: 'اشاره‌ای در کار نیست', description: 'وقتی کسی به شما اشاره کند یا به دیدگاهتان پاسخ دهد، اینجا می‌بینید.' },
+  'mentioned-messages': { title: 'پیامی با اشاره به شما نیست', description: 'وقتی کسی در گفتگو از شما نام ببرد، پیامش اینجا می‌آید.' },
+  'assigned-today': { title: 'امروز وظیفه‌ای به شما ارجاع نشده', description: 'وظایفی که امروز به شما سپرده شود، اینجا نمایش داده می‌شود.' },
 };
+
+const QUICK_VIEWS: ReadonlyArray<{ readonly id: QuickView; readonly label: string; readonly icon: ReactNode }> = [
+  { id: 'mentioned-messages', label: 'پیام‌های اشاره‌شده', icon: <MessagesIcon size={14} /> },
+  { id: 'assigned-today', label: 'وظایف ارجاع‌شده امروز', icon: <TaskSquareIcon size={14} /> },
+];
+
+function inQuickView(notification: AppNotification, view: QuickView, today: string): boolean {
+  if (view === 'mentioned-messages') return notification.event.kind === 'mention' && notification.target.kind === 'conversation';
+  return notification.event.kind === 'task-assigned' && toISODate(parseISODate(notification.createdAt)) === today;
+}
 
 /**
  * Notification centre: a drawer beside the rail with All / Unread / Mentions tabs. Each
@@ -67,8 +82,14 @@ export function NotificationCenter({
   onOpenTarget,
 }: NotificationCenterProps) {
   const [filter, setFilter] = useState<NotificationFilterId>('all');
+  const [quick, setQuick] = useState<QuickView | null>(null);
+  // The drawer only renders on the client once opened, so "today" never differs from the server's.
+  const today = toISODate(new Date());
 
-  useResetOnOpen(open, () => setFilter('all'));
+  useResetOnOpen(open, () => {
+    setFilter('all');
+    setQuick(null);
+  });
 
   const counts = useMemo(
     () => ({
@@ -79,7 +100,18 @@ export function NotificationCenter({
     [notifications],
   );
 
-  const visible = useMemo(() => filterNotifications(notifications, filter), [notifications, filter]);
+  const quickCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        QUICK_VIEWS.map(({ id }) => [id, notifications.filter((notification) => !notification.read && inQuickView(notification, id, today)).length]),
+      ) as Record<QuickView, number>,
+    [notifications, today],
+  );
+
+  const visible = useMemo(() => {
+    const filtered = filterNotifications(notifications, filter);
+    return quick ? filtered.filter((notification) => inQuickView(notification, quick, today)) : filtered;
+  }, [notifications, filter, quick, today]);
 
   // Bucket by local day so the list reads "امروز / دیروز / …" like the chat dividers.
   const groups = useMemo(() => {
@@ -93,7 +125,7 @@ export function NotificationCenter({
     return buckets;
   }, [visible]);
 
-  const empty = EMPTY_COPY[filter];
+  const empty = EMPTY_COPY[quick ?? filter];
 
   return (
     <SlideOver
@@ -109,22 +141,56 @@ export function NotificationCenter({
             ariaLabel="فیلتر اعلان‌ها"
             fullWidth
             value={filter}
-            onValueChange={setFilter}
+            onValueChange={(next) => {
+              setFilter(next);
+              setQuick(null);
+            }}
             options={NOTIFICATION_FILTERS.map((entry) => ({
               value: entry.id,
               label: entry.label,
               ...(counts[entry.id] > 0 ? { count: formatCount(counts[entry.id]) } : {}),
             }))}
           />
-          <Button
-            variant="link"
-            className="self-end text-caption"
-            iconStart={<DoubleCheckIcon size={16} />}
-            disabled={counts.unread === 0}
-            onClick={onMarkAllRead}
-          >
-            علامت‌گذاری همه به عنوان خوانده‌شده
-          </Button>
+          <div role="group" aria-label="دسترسی سریع" className="flex flex-wrap items-center gap-2">
+            {QUICK_VIEWS.map((view) => {
+              const pressed = quick === view.id;
+              const count = quickCounts[view.id];
+              return (
+                <button
+                  key={view.id}
+                  type="button"
+                  aria-pressed={pressed}
+                  onClick={() => {
+                    setFilter('all');
+                    setQuick(pressed ? null : view.id);
+                  }}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-caption font-medium transition-colors',
+                    pressed
+                      ? 'border-brand bg-brand-subtle text-fg-brand'
+                      : 'border-secondary text-fg-secondary hover:bg-hover',
+                  )}
+                >
+                  {view.icon}
+                  {view.label}
+                  {count > 0 && (
+                    <span className="numeric rounded-full bg-brand-solid px-1.5 text-micro font-semibold text-fg-on-brand">
+                      {formatCount(count)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <Button
+              variant="link"
+              className="ms-auto text-caption"
+              iconStart={<DoubleCheckIcon size={16} />}
+              disabled={counts.unread === 0}
+              onClick={onMarkAllRead}
+            >
+              علامت‌گذاری همه به‌عنوان خوانده‌شده
+            </Button>
+          </div>
         </div>
       }
     >
@@ -234,7 +300,7 @@ function NotificationCard({ notification, onOpen, onMarkRead }: NotificationCard
           <>
             <span className="size-2 rounded-full bg-brand-solid" aria-hidden="true" />
             <IconButton
-              label="علامت‌گذاری به عنوان خوانده‌شده"
+              label="علامت‌گذاری به‌عنوان خوانده‌شده"
               icon={<CheckIcon size={15} />}
               size="xs"
               onClick={onMarkRead}

@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useWorkspace } from '@/store/WorkspaceProvider';
-import { conversationById, filterConversations } from '@/store/selectors';
-import { PROJECTS } from '@/data/workspace';
+import { useLive, useWorkspace } from '@/store/WorkspaceProvider';
+import { conversationById, filterConversations, userById } from '@/store/selectors';
+import { directory } from '@/store/directory';
 import { AppShell } from '@/components/layout/AppShell';
 import { useOverlays } from '@/components/overlays/OverlayProvider';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
@@ -35,7 +35,7 @@ function ChatsShell() {
   );
 
   const active = conversationById(conversations, state.activeConversationId);
-  const defaultProjectId = PROJECTS[0]?.id ?? '';
+  const defaultProjectId = directory.projects()[0]?.id ?? '';
 
   return (
     <AppShell
@@ -87,6 +87,7 @@ interface ChatContentProps {
 /** Split out so the composer hook resolves inside the `AppShell` provider. */
 function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentProps) {
   const { state, dispatch } = useWorkspace();
+  const live = useLive();
   const { openTaskComposer } = useOverlays();
   const conversation = conversationById(state.conversations, state.activeConversationId);
 
@@ -116,6 +117,8 @@ function ChatContent({ onBack, defaultProjectId, currentUserId }: ChatContentPro
       onOpenDetails={() =>
         dispatch({ type: 'open-conversation-details', conversationId: conversation.id })
       }
+      typingNames={(state.typingByConversation[conversation.id] ?? []).map((userId) => userById(userId)?.fullName ?? 'کسی')}
+      {...(live ? { onTyping: (active: boolean) => live.store.typing(conversation.id, active) } : {})}
     />
   );
 }

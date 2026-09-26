@@ -5,7 +5,8 @@ import { cn } from '@/lib/cn';
  * Workspace badges: brand-solid for the accent tone; the other tones use the fixed tag
  * palette's tinted fill + ink pair, which clears AA where white-on-hue would not.
  */
-const TONES: Readonly<Record<AvatarTone, string>> = {
+/** Background and ink of each tone, also used for plain colour swatches. */
+export const TONE_CLASSES: Readonly<Record<AvatarTone, string>> = {
   brand: 'bg-brand-solid text-fg-on-brand',
   teal: 'bg-tag-teal-subtle text-tag-teal-ink',
   violet: 'bg-tag-violet-subtle text-tag-violet-ink',
@@ -36,7 +37,7 @@ export function WorkspaceAvatar({ workspace, size = 'md', className }: Workspace
       className={cn(
         'flex shrink-0 items-center justify-center overflow-hidden font-bold',
         SIZES[size],
-        !workspace.iconUrl && TONES[workspace.tone],
+        !workspace.iconUrl && TONE_CLASSES[workspace.tone],
         className,
       )}
     >

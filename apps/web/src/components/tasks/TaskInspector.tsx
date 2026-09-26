@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { formatJalali } from '@taskin/jalali';
 import { formatCount, formatFileSize } from '@/lib/format';
 import { TASK_PRIORITIES, statusTone } from '@/data/reference';
-import { USERS } from '@/data/workspace';
+import { directory } from '@/store/directory';
 import { columnForTask, projectById, userById } from '@/store/selectors';
 import {
   Avatar,
@@ -435,7 +435,7 @@ function PeoplePicker({ selectedIds, onToggle, label, emptyLabel, single = false
     >
       {(close) => (
         <MenuList>
-          {USERS.map((user) => (
+          {directory.users().map((user) => (
             <MenuItem
               key={user.id}
               selected={selectedIds.includes(user.id)}

@@ -67,6 +67,7 @@ function TaskSidebarContainer({
   readonly onNavigate: () => void;
 }) {
   const { state, dispatch } = useWorkspace();
+  const { open } = useOverlays();
 
   return (
     <TaskSidebar
@@ -82,6 +83,7 @@ function TaskSidebarContainer({
         dispatch({ type: 'set-project-filter', projectId });
         onNavigate();
       }}
+      onCreateProject={() => open({ kind: 'project-composer' })}
     />
   );
 }

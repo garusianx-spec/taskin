@@ -4,6 +4,7 @@ import {
   CALENDAR_EVENTS,
   CONVERSATIONS,
   CURRENT_USER,
+  CURRENT_USER_ID,
   INVITATIONS,
   LOGIN_SESSIONS,
   MESSAGES,
@@ -11,17 +12,21 @@ import {
   NOTIFICATIONS,
   PASSWORD_CHANGED_AT,
   PRIMARY_WORKSPACE_ID,
+  PROJECTS,
   TASKS,
+  USERS,
   WORKSPACES,
 } from '@/data/workspace';
 import { BUILT_IN_COLUMNS, BUILT_IN_NOTE_CATEGORIES, DEFAULT_PERMISSION_MATRIX } from '@/data/reference';
+import { IS_LIVE } from '@/lib/data-source';
 
-/**
- * The state a fresh session starts from. Kept apart from the provider so the reducer can
- * return to it on sign-out without importing React.
- */
-export const INITIAL_WORKSPACE_STATE: WorkspaceState = {
+/** The demo workspace (`NEXT_PUBLIC_DATA_SOURCE=demo`): the fixtures in `src/data`. */
+export const DEMO_WORKSPACE_STATE: WorkspaceState = {
   session: 'active',
+  meId: CURRENT_USER_ID,
+  users: USERS,
+  projects: PROJECTS,
+  typingByConversation: {},
   workspaces: WORKSPACES,
   activeWorkspaceId: PRIMARY_WORKSPACE_ID,
   // The other seeded workspaces have not been worked in yet; they open empty.
@@ -58,3 +63,39 @@ export const INITIAL_WORKSPACE_STATE: WorkspaceState = {
   taskSearch: '',
   announcement: '',
 };
+
+/**
+ * Before the API has answered: nothing at all. The live provider shows the sign-in screen or a
+ * loading state until `sync/merge` fills this in, so no screen ever renders it.
+ */
+export const LIVE_EMPTY_STATE: WorkspaceState = {
+  ...DEMO_WORKSPACE_STATE,
+  meId: '',
+  users: [],
+  projects: [],
+  workspaces: [],
+  activeWorkspaceId: '',
+  activity: [],
+  tasks: [],
+  boardColumns: [],
+  conversations: [],
+  messages: [],
+  calendarEvents: [],
+  notes: [],
+  noteCategories: [],
+  notifications: [],
+  invitations: [],
+  loginSessions: [],
+  passwordChangedAt: new Date(0).toISOString(),
+  profile: { presence: 'online', statusMessage: '' },
+  pinnedConversationIds: [],
+  mutedConversationIds: [],
+  unreadByConversation: {},
+  activeConversationId: '',
+};
+
+/**
+ * The state a fresh session starts from. Kept apart from the provider so the reducer can
+ * return to it on sign-out without importing React.
+ */
+export const INITIAL_WORKSPACE_STATE: WorkspaceState = IS_LIVE ? LIVE_EMPTY_STATE : DEMO_WORKSPACE_STATE;

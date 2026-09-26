@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn';
 import { describeDeadline } from '@taskin/jalali';
 import { formatCount } from '@/lib/format';
 import { priorityLabel, priorityTone } from '@/data/reference';
-import { projectById, subtaskProgress, usersByIds } from '@/store/selectors';
+import { attachmentCount, projectById, subtaskProgress, usersByIds } from '@/store/selectors';
 import { AvatarStack, Badge, ProgressBar } from '@/components/ui';
 import { CalendarIcon, FlagIcon, PaperclipIcon, StarFilledIcon, SubtaskIcon } from '@/components/icons';
 import { TaskCompleteCheckbox, completedTitleClass } from './TaskCompleteCheckbox';
@@ -116,10 +116,10 @@ export function TaskCard({
           <Badge tone={deadline.tone} size="sm" numeric iconStart={<CalendarIcon size={11} />}>
             {deadline.text}
           </Badge>
-          {task.attachments.length > 0 && (
+          {attachmentCount(task) > 0 && (
             <span className="numeric inline-flex items-center gap-0.5 text-micro text-fg-tertiary">
               <PaperclipIcon size={13} />
-              {formatCount(task.attachments.length)}
+              {formatCount(attachmentCount(task))}
             </span>
           )}
           {progress.total > 0 && (

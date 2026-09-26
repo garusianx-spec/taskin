@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useIsomorphicLayoutEffect } from '@/hooks/useIsomorphicLayoutEffect';
 import type { Conversation, Message, TaskDraft } from '@taskin/contracts';
 import { cn } from '@/lib/cn';
-import { formatDateDivider, fromISODate } from '@taskin/jalali';
+import { formatDateDivider, fromISODate, toPersianDigits } from '@taskin/jalali';
 import { formatCount, truncate } from '@/lib/format';
 import {
   conversationMessages,
@@ -40,6 +40,9 @@ export interface ChatViewProps {
   /** Mobile only — returns to the conversation list. */
   readonly onBack?: () => void;
   readonly defaultProjectId: string;
+  /** Who else is typing in this conversation right now (live only). */
+  readonly typingNames?: readonly string[];
+  readonly onTyping?: (active: boolean) => void;
 }
 
 /**
@@ -57,6 +60,8 @@ export function ChatView({
   onOpenDetails,
   onBack,
   defaultProjectId,
+  typingNames = [],
+  onTyping,
 }: ChatViewProps) {
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [inChatQuery, setInChatQuery] = useState('');
@@ -256,10 +261,18 @@ export function ChatView({
         )}
       </div>
 
+      {/* Live only: the line keeps its height, so the thread does not jump when someone types. */}
+      {onTyping && (
+        <p aria-live="polite" data-testid="typing-indicator" className="h-5 shrink-0 truncate bg-surface px-4 text-caption text-fg-tertiary">
+          {typingLine(typingNames)}
+        </p>
+      )}
+
       <ChatComposer
         conversationTitle={conversation.title}
         replyPreview={replyPreview}
         onCancelReply={() => setReplyToId(null)}
+        {...(onTyping ? { onTyping } : {})}
         onSend={(text) => {
           onSend(text, replyToId);
           setReplyToId(null);
@@ -300,4 +313,13 @@ function DateDivider({ iso }: { readonly iso: string }) {
       <span className="h-px flex-1 bg-gray-200" aria-hidden="true" />
     </div>
   );
+}
+
+/** «سحر در حال نوشتن است…», «سحر و علی …», or a count beyond two people. */
+function typingLine(names: readonly string[]): string {
+  const [first, second] = names;
+  if (!first) return '';
+  if (names.length === 1) return `${first} در حال نوشتن است…`;
+  if (names.length === 2 && second) return `${first} و ${second} در حال نوشتن هستند…`;
+  return `${toPersianDigits(names.length)} نفر در حال نوشتن هستند…`;
 }

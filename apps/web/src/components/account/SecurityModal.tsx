@@ -28,6 +28,14 @@ export interface SecurityModalProps {
   readonly onToggleTwoFactor: (enabled: boolean) => void;
   readonly onRevokeSession: (sessionId: string) => void;
   readonly onRevokeOtherSessions: () => void;
+  /**
+   * The live app. Sign-in is by SMS code, so the password here is the admin password the server
+   * checks for sensitive actions; `onChangePassword` resolves to an error message, or null.
+   */
+  readonly live?: {
+    readonly hasPassword: boolean;
+    readonly onChangePassword: (current: string | null, next: string) => Promise<string | null>;
+  };
 }
 
 const MIN_LENGTH = 8;
@@ -67,8 +75,9 @@ const STRENGTH_TONE: Readonly<Record<Strength['score'], string>> = {
 
 /**
  * "امنیت و ورود": password rotation, SMS two-step sign-in and the list of signed-in devices.
- * There is no identity backend behind this mock, so the password form validates locally and
- * records the change time; everything else updates workspace state directly.
+ * In the demo the password form validates locally and records the change time. Live (`live`),
+ * the account signs in with SMS codes and the form sets or changes the admin password on the
+ * server; the two-step switch is gone, since the code is already the first factor.
  */
 export function SecurityModal({
   open,
@@ -81,6 +90,7 @@ export function SecurityModal({
   onToggleTwoFactor,
   onRevokeSession,
   onRevokeOtherSessions,
+  live,
 }: SecurityModalProps) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -88,8 +98,14 @@ export function SecurityModal({
   const [reveal, setReveal] = useState(false);
   const [touched, setTouched] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  /** Setting a first admin password needs no current one. */
+  const needsCurrent = !live || live.hasPassword;
 
   useResetOnOpen(open, () => {
+    setBusy(false);
+    setServerError(null);
     setCurrent('');
     setNext('');
     setConfirm('');
@@ -99,7 +115,7 @@ export function SecurityModal({
   });
 
   const strength = measureStrength(next);
-  const currentError = touched && !current ? 'رمز عبور فعلی را وارد کنید.' : undefined;
+  const currentError = needsCurrent && touched && !current ? 'رمز عبور فعلی را وارد کنید.' : undefined;
   const nextError = !touched
     ? undefined
     : next.length < MIN_LENGTH
@@ -109,10 +125,20 @@ export function SecurityModal({
         : undefined;
   const confirmError = touched && confirm !== next ? 'تکرار رمز عبور با رمز جدید یکسان نیست.' : undefined;
 
-  const submitPassword = () => {
+  const submitPassword = async () => {
     setTouched(true);
     setSaved(false);
-    if (!current || next.length < MIN_LENGTH || next === current || confirm !== next) return;
+    setServerError(null);
+    if ((needsCurrent && !current) || next.length < MIN_LENGTH || next === current || confirm !== next) return;
+    if (live) {
+      setBusy(true);
+      const failure = await live.onChangePassword(needsCurrent ? current : null, next);
+      setBusy(false);
+      if (failure) {
+        setServerError(failure);
+        return;
+      }
+    }
     onPasswordChanged();
     setCurrent('');
     setNext('');
@@ -141,7 +167,11 @@ export function SecurityModal({
       onClose={onClose}
       size="md"
       title="امنیت و ورود"
-      description="رمز عبور، ورود دومرحله‌ای و دستگاه‌هایی که با حساب شما وارد شده‌اند."
+      description={
+        live
+          ? 'رمز مدیر و دستگاه‌هایی که با حساب شما وارد شده‌اند.'
+          : 'رمز عبور، ورود دومرحله‌ای و دستگاه‌هایی که با حساب شما وارد شده‌اند.'
+      }
       icon={<ShieldIcon size={20} />}
       footer={
         <Button variant="secondary" onClick={onClose}>
@@ -154,32 +184,42 @@ export function SecurityModal({
           <div className="flex flex-wrap items-baseline gap-2">
             <h3 id="security-password" className="flex items-center gap-2 text-title-sm font-semibold text-fg-primary">
               <KeyIcon size={18} className="text-fg-quaternary" />
-              تغییر رمز عبور
+              {live ? (live.hasPassword ? 'تغییر رمز مدیر' : 'تعیین رمز مدیر') : 'تغییر رمز عبور'}
             </h3>
-            <span className="numeric text-micro text-fg-tertiary">
-              {`آخرین تغییر: ${formatJalali(passwordChangedAt, 'medium')}`}
-            </span>
+            {!live && (
+              <span className="numeric text-micro text-fg-tertiary">
+                {`آخرین تغییر: ${formatJalali(passwordChangedAt, 'medium')}`}
+              </span>
+            )}
           </div>
+          {live && (
+            <p className="text-caption text-fg-tertiary">
+              ورود به حساب با کد پیامکی است. مالکان و مدیران برای کارهای حساس، مانند حذف فضای کاری یا تغییر دسترسی‌ها، این رمز را وارد
+              می‌کنند. با تغییر رمز، نشست‌های دیگر شما بسته می‌شوند.
+            </p>
+          )}
 
           <form
             className="flex flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              submitPassword();
+              void submitPassword();
             }}
           >
             {/* Lets password managers associate the fields with this account. */}
-            <input type="email" autoComplete="username" value={user.email} readOnly hidden />
-            <Input
-              label="رمز عبور فعلی"
-              type={inputType}
-              autoComplete="current-password"
-              dir="ltr"
-              value={current}
-              onChange={(event) => setCurrent(event.target.value)}
-              error={currentError}
-              iconEnd={revealToggle}
-            />
+            <input type="text" autoComplete="username" value={user.email || user.phone} readOnly hidden />
+            {needsCurrent && (
+              <Input
+                label="رمز عبور فعلی"
+                type={inputType}
+                autoComplete="current-password"
+                dir="ltr"
+                value={current}
+                onChange={(event) => setCurrent(event.target.value)}
+                error={currentError}
+                iconEnd={revealToggle}
+              />
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input
                 label="رمز عبور جدید"
@@ -225,9 +265,14 @@ export function SecurityModal({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" size="sm">
-                به‌روزرسانی رمز عبور
+              <Button type="submit" size="sm" loading={busy}>
+                {live && !live.hasPassword ? 'ذخیره رمز مدیر' : 'به‌روزرسانی رمز عبور'}
               </Button>
+              {serverError && (
+                <span role="alert" className="text-caption font-medium text-status-blocked">
+                  {serverError}
+                </span>
+              )}
               {saved && (
                 <span role="status" className="inline-flex items-center gap-1.5 text-caption font-medium text-status-done">
                   <CheckCircleIcon size={16} />
@@ -238,20 +283,22 @@ export function SecurityModal({
           </form>
         </section>
 
-        <section aria-label="ورود دومرحله‌ای" className="rounded-xl border border-secondary p-4">
-          <SwitchField
-            checked={twoFactorEnabled}
-            onCheckedChange={onToggleTwoFactor}
-            title="ورود دومرحله‌ای با پیامک"
-            description={
-              <span className="numeric">
-                {twoFactorEnabled
-                  ? `در هر ورود، کد یک‌بارمصرف به ${toPersianDigits(user.phone)} ارسال می‌شود.`
-                  : 'با فعال‌سازی، ورود به حساب علاوه بر رمز عبور به کد پیامکی نیاز دارد.'}
-              </span>
-            }
-          />
-        </section>
+        {!live && (
+          <section aria-label="ورود دومرحله‌ای" className="rounded-xl border border-secondary p-4">
+            <SwitchField
+              checked={twoFactorEnabled}
+              onCheckedChange={onToggleTwoFactor}
+              title="ورود دومرحله‌ای با پیامک"
+              description={
+                <span className="numeric">
+                  {twoFactorEnabled
+                    ? `در هر ورود، کد یک‌بارمصرف به ${toPersianDigits(user.phone)} ارسال می‌شود.`
+                    : 'با فعال‌سازی، ورود به حساب علاوه بر رمز عبور به کد پیامکی نیاز دارد.'}
+                </span>
+              }
+            />
+          </section>
+        )}
 
         <section aria-labelledby="security-sessions" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">

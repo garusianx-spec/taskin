@@ -1,5 +1,5 @@
 import type { TaskDraft } from '@taskin/contracts';
-import { PROJECTS } from '@/data/workspace';
+import { directory } from '@/store/directory';
 
 /**
  * A blank task draft with the given fields filled in. Every entry point into the composer
@@ -10,7 +10,7 @@ export function taskDraft(overrides: Partial<TaskDraft> = {}): TaskDraft {
   return {
     title: '',
     description: '',
-    projectId: PROJECTS[0]?.id ?? '',
+    projectId: directory.projects()[0]?.id ?? '',
     status: 'todo',
     boardColumnId: null,
     priority: 'medium',
