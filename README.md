@@ -16,13 +16,15 @@ Node.js 22.12 or newer. Every command runs from the repository root:
 
 ```bash
 npm install
-npm run dev             # builds the shared packages, then http://localhost:3000
+npm run dev             # builds the shared packages, then http://localhost:3000 (the live app: needs the API on :4000)
+NEXT_PUBLIC_DATA_SOURCE=demo npm run dev   # the same app on the in-memory demo workspace, no backend needed
 npm run build           # packages, apps/api and the production build of apps/web
 npm run typecheck       # every workspace (strict, noUncheckedIndexedAccess)
 npm run lint            # Next rules for apps/web, typescript-eslint for packages and apps/api
 npm test                # unit tests: packages/jalali, packages/text, apps/api (no services needed)
 npm run check:contrast  # WCAG AA audit of every palette × mode (see Theme engine)
-npm run build && npm run test:e2e   # Playwright suites against the production build
+NEXT_PUBLIC_DATA_SOURCE=demo npm run build && npm run test:e2e   # Playwright suites (demo data), production build
+API_LOG=<api log file> npm run test:e2e:live                    # two people against the running API (see Live app)
 
 # Backend (Docker for the backing services)
 npm run infra:up        # PostgreSQL 18, PgBouncer, Redis ×2, S3 (SeaweedFS), Mailpit
@@ -53,8 +55,53 @@ in a second terminal to pick up package edits.
 
 `npm run test:e2e` starts `next start` on port 3100 (`E2E_PORT`), or uses `BASE_URL` if you
 already run a server, and takes suite names to run a subset (`npm run test:e2e -- kanban theme`).
-It launches Chromium from `CHROMIUM_PATH` when set, otherwise from
+It needs a demo build and says so when it finds a live one (the root element carries
+`data-source`). It launches Chromium from `CHROMIUM_PATH` when set, otherwise from
 `npx playwright-core install chromium`. Screenshots land in `apps/web/e2e/out`.
+
+---
+
+## Live app
+
+By default the web app runs against the Taskin API. Next.js proxies `/api/v1/*` and the
+Socket.IO path `/rt/` to the API, so the browser only ever talks to the app's own origin: the
+refresh cookie is first-party and no CORS is involved. In production the edge (nginx) routes
+both paths the same way.
+
+| Variable | Read at | Default | Purpose |
+| --- | --- | --- | --- |
+| `NEXT_PUBLIC_DATA_SOURCE` | build | `api` | `api` for the live app, `demo` for the in-memory fixture workspace |
+| `TASKIN_API_ORIGIN` | build | `http://localhost:4000` | Where `/api/v1` and `/rt` are proxied. Rewrites are compiled into the build, so set it before `next build` |
+| `NEXT_PUBLIC_RT_URL` | build | the page's origin | Connect the socket to another origin instead (an edge that routes `/rt` itself) |
+
+Locally: `npm run infra:app` (or `infra:up` plus the API from `apps/api`), then `npm run dev`.
+Sign in with any Iranian mobile number; the API's console SMS driver writes the code to its log
+(`"text":"کد ورود شما به تسکین: 123456"`). A new number signs up with a name and then creates
+its first workspace, which asks for the admin password owners need for sensitive actions.
+Invitations sent by SMS log a link (`/invite?token=…`): open it in another browser, sign in with
+the invited number, and the account joins that workspace.
+
+**How the data flows.** The reducer the screens were built on is unchanged; `store/live` feeds
+it. After sign-in one round of parallel requests loads the workspace into the reducer. Every
+action is applied at once (the optimistic update) and then sent to the API, which answers with
+its ids, versions and placements; those replace the optimistic values, and changes made to a
+still-local entity wait for its server id. A refusal is shown as a toast and the entity is
+re-read; a stale version (`412`) reloads the task as it now is. Socket events — other people's
+messages, typing, read cursors, reactions, presence, task and column changes, notifications,
+membership and permission changes — become `sync/*` actions. The socket subscribes before the
+load, so events that arrive meanwhile wait and are applied after it; after a reconnect,
+`sync:resume` replays what was missed. The access token lives in memory only; the refresh token
+is an HttpOnly cookie, refreshed a minute before the access token expires and once more on a
+`401`. Signing out revokes the session on the server and clears both.
+
+**Live end to end.** `npm run test:e2e:live` drives two browsers through one workspace: sign-up,
+first workspace, a project, an SMS invitation accepted through its link, a task created and
+assigned by one person and completed live on the other's board, a direct chat with delivery,
+typing, read receipts and ❤️ / 👎 reactions, the notification quick views and «علامت‌گذاری همه
+به‌عنوان خوانده‌شده», and sign-out from the profile menu. It reads codes and links from
+`API_LOG` (the API's log file) and targets `BASE_URL` (default `http://localhost:3100`); any
+console error or warning, hydration mismatches included, fails it. CI runs it against the
+Compose API and a production build of the web app.
 
 ---
 
@@ -227,14 +274,17 @@ apps/web/src/
 │   ├── notes/              # Category sidebar, block editor with live checklists, Markdown renderer
 │   ├── notifications/      # Notification centre drawer
 │   ├── account/            # Profile, security & sign-in, sign-out dialogs
+│   ├── auth/               # Live sign-in (SMS code), first workspace, loading and connection states
 │   ├── directory/          # Invite dialog (email or Iranian mobile)
 │   ├── workspace/          # Switcher menu, create / settings / delete-workspace dialogs
 │   ├── rbac/               # Permission matrix + advanced editing modal
 │   └── theme/              # ThemeProvider, ThemePicker
-├── data/                   # Typed reference data + seed workspace fixture
+├── api/                    # REST client, session and tokens, Socket.IO client, API → domain mappers
+├── data/                   # Typed reference data + seed workspace fixture (the demo data source)
 ├── hooks/                  # focus trap, scroll lock, roving focus, media query, clock
 ├── lib/                    # formatting, link metadata, downloads, tag tones, theme bootstrap
 ├── store/                  # Pure reducer + selectors + container provider
+│   └── live/               # LiveStore: loads from the API, sends changes, applies socket events
 └── styles/                 # fonts.css, tokens.css
 ```
 
@@ -248,8 +298,10 @@ Persian text helpers (digits, mobile numbers, monograms, note Markdown and check
 `WorkspaceProvider` is the **single stateful container**. Everything below it is
 presentational: it receives data and callbacks and owns no domain state. `workspace-reducer.ts`
 is a pure function with a closed, exhaustively-switched action union — it has no React
-import and is directly unit-testable. In production the transport layer (React Query, server
-actions) would feed this same reducer; the contract would not change.
+import and is directly unit-testable. In the live app `LiveStore` sits beside it: the provider
+applies each action to the reducer and hands it to the store, which sends it to the API and
+feeds server answers and socket events back as `sync/*` actions (see Live app). The screens do
+not know which data source they run on.
 
 Every modal dialog lives in one global store, `OverlayProvider`, mounted in the root layout
 above all routes. `useOverlays()` opens any of them from anywhere — the rail, a board column,
@@ -397,13 +449,26 @@ the message text and any attachment. Verified: zero horizontal overflow on every
 
 ---
 
-## What is mocked
+## What is not wired yet
 
-The web app is a complete front end against an in-memory fixture
-(`apps/web/src/data/workspace.ts`). The API it will talk to exists (`apps/api`, milestones M1
-to M3: sign-in, workspaces, members, invitations, roles, projects, the board, tasks, files,
-notes, the calendar, notifications, and real-time chat over Socket.IO), but wiring the two
-together is milestone M4, so for now the front end does not call it. Consequences worth stating plainly:
+The live app persists and synchronises what the screens do through the API: sign-in and
+sessions, workspaces, invitations, roles and permissions, projects, the board and its columns,
+tasks with subtasks and comments, chat (messages, reactions, read receipts, typing, pins and
+mutes), the calendar, notes, notifications and presence. What still stays in the browser:
+
+- **Files.** Nothing uploads yet: workspace icons (the upload is hidden in the live app; the
+  monogram is used), chat attachments and voice notes, task attachments.
+- **Subtask order.** Reordering subtasks is local; the API has no endpoint for it yet.
+- **Message → task.** A task converted from a chat message is created, but its link back to the
+  message waits for the bridge endpoint (M4 in RFC 0001).
+- **«نامرئی».** The server derives offline from connectivity, so the invisible status is stored
+  as «خارج از دسترس».
+- **Two-step sign-in.** The SMS code is already the first factor, so the live security dialog
+  offers the admin password instead of the demo's SMS two-step switch.
+
+The demo data source (`NEXT_PUBLIC_DATA_SOURCE=demo`) is the complete front end against an
+in-memory fixture (`apps/web/src/data/workspace.ts`), which the Playwright suites drive.
+Consequences worth stating plainly for it:
 
 - **Voice messages have no audio files.** `VoicePlayer` implements both transports: when a
   message carries a `src` it drives a real `HTMLAudioElement` (seeking, `timeupdate`,
@@ -419,9 +484,9 @@ together is milestone M4, so for now the front end does not call it. Consequence
   repository. `AvatarTone` selects from the neutral and status ramps rather than the brand
   ramp, so members stay distinguishable when the workspace accent changes.
 
-State changes (moving cards, adding, renaming and deleting columns, archiving tasks, editing
-permissions, sending messages, creating tasks, events, notes, categories, invitations and
-workspaces) are real and flow through the reducer; they reset on
-reload because nothing is persisted except the theme. By the same token the account flows are
-front-end only: the password form validates locally and records the change time, and signing
-out resets the in-memory session — a full reload starts a fresh signed-in session.
+In the demo, state changes (moving cards, adding, renaming and deleting columns, archiving
+tasks, editing permissions, sending messages, creating tasks, events, notes, categories,
+invitations and workspaces) are real and flow through the reducer; they reset on reload because
+nothing is persisted except the theme. By the same token the demo's account flows are front-end
+only: the password form validates locally and records the change time, and signing out resets
+the in-memory session — a full reload starts a fresh signed-in session.

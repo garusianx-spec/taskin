@@ -134,12 +134,53 @@ jobs:
       - run: npm ci
       - name: Install Chromium for playwright-core
         run: npx playwright-core install --with-deps chromium
+      # These suites drive the demo fixtures; the live app has its own job below.
       - run: npm run build
+        env:
+          NEXT_PUBLIC_DATA_SOURCE: demo
       - run: npm run test:e2e
       - name: Upload screenshots
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-screenshots
+          path: apps/web/e2e/out
+          retention-days: 7
+
+  e2e-live:
+    name: Live app end to end (web on the Compose API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium for playwright-core
+        run: npx playwright-core install --with-deps chromium
+      - name: Start the API and its services
+        run: docker compose -f infra/docker-compose.yml --profile app up -d --build --wait --wait-timeout 300
+      - name: Build the live web app and serve it on :3000 (proxying /api/v1 and /rt to :4000)
+        run: |
+          npm run build -w @taskin/web
+          nohup npm run start -w @taskin/web -- -p 3000 > "$RUNNER_TEMP/web.log" 2>&1 &
+          for attempt in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/feed && break; sleep 1; done
+      - name: Two people, one workspace (sign-in, invitation, tasks, chat, notifications, sign-out)
+        run: |
+          # The console SMS driver logs sign-in codes and invitation links; the suite reads them here.
+          docker compose -f infra/docker-compose.yml --profile app logs -f --no-log-prefix api > "$RUNNER_TEMP/api.log" 2>&1 &
+          API_LOG="$RUNNER_TEMP/api.log" BASE_URL=http://localhost:3000 npm run test:e2e:live
+      - name: Logs
+        if: failure()
+        run: |
+          tail -100 "$RUNNER_TEMP/web.log"
+          docker compose -f infra/docker-compose.yml --profile app logs --tail 100 api
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-live-screenshots
           path: apps/web/e2e/out
           retention-days: 7

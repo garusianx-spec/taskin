@@ -2,7 +2,7 @@
 /**
  * Runs the Playwright suites in `e2e/suites` one after another against a production build.
  *
- *   npm run build && npm run test:e2e              # starts `next start` on E2E_PORT (default 3100)
+ *   NEXT_PUBLIC_DATA_SOURCE=demo npm run build && npm run test:e2e   # starts `next start` on E2E_PORT (default 3100)
  *   BASE_URL=http://localhost:3000 npm run test:e2e  # against a server that is already running
  *   npm run test:e2e -- kanban theme               # only the named suites
  *
@@ -55,6 +55,16 @@ if (!baseUrl) {
     stdio: ['ignore', 'ignore', 'inherit'],
   });
   await waitForServer(baseUrl);
+}
+
+// These suites drive the demo fixtures; a live build shows the sign-in screen instead.
+const source = /<html[^>]*\sdata-source="([a-z]+)"/.exec(await (await fetch(`${baseUrl}/feed`)).text())?.[1];
+if (source !== 'demo') {
+  stopServer();
+  console.error(
+    `The app at ${baseUrl} was built for the «${source ?? 'unknown'}» data source. These suites need the demo data: build with NEXT_PUBLIC_DATA_SOURCE=demo npm run build. The live app has its own suite: npm run test:e2e:live.`,
+  );
+  process.exit(2);
 }
 
 const results = [];

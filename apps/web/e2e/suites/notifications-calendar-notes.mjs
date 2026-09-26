@@ -14,15 +14,25 @@ await page.screenshot({ path: `${out}/n1_all.png` });
 const cards = drawer.getByRole('listitem');
 check(await eventually(async () => (await cards.count()) === 9), `all tab lists 9 (${await cards.count()})`);
 check(await visible(drawer.getByText('۵ دقیقه پیش')), 'relative Jalali time «۵ دقیقه پیش» shown');
+// Quick actions narrow the list; a tab clears them.
+await drawer.getByRole('button', { name: /^پیام‌های اشاره‌شده/ }).click();
+check(await eventually(async () => (await cards.count()) === 2), `«پیام‌های اشاره‌شده» lists the two chat mentions (${await cards.count()})`);
+await drawer.getByRole('button', { name: /^وظایف ارجاع‌شده امروز/ }).click();
+// The fixture assignment is 52 minutes old: before 01:00 it belongs to yesterday.
+const expectAssigned = new Date().getHours() === 0 ? 0 : 1;
+check(await eventually(async () => (await cards.count()) === expectAssigned), `«وظایف ارجاع‌شده امروز» lists today's assignment (${await cards.count()})`);
+check((await drawer.getByRole('button', { name: /^وظایف ارجاع‌شده امروز/ }).getAttribute('aria-pressed')) === 'true', 'quick action shows as pressed');
+await drawer.getByRole('tab', { name: /همه/ }).click();
+check(await eventually(async () => (await cards.count()) === 9), 'a tab clears the quick action');
 await drawer.getByRole('tab', { name: /خوانده‌نشده/ }).click();
 check(await eventually(async () => (await cards.count()) === 5), `unread tab lists 5 (${await cards.count()})`);
 await drawer.getByRole('tab', { name: /اشاره‌ها/ }).click();
 check(await eventually(async () => (await cards.count()) === 4), `mentions tab lists 4 (${await cards.count()})`);
 await drawer.getByRole('tab', { name: /خوانده‌نشده/ }).click();
-await cards.first().getByRole('button', { name: 'علامت‌گذاری به عنوان خوانده‌شده' }).click();
+await cards.first().getByRole('button', { name: 'علامت‌گذاری به‌عنوان خوانده‌شده' }).click();
 check(await eventually(async () => (await cards.count()) === 4), 'single mark-as-read removes it from unread');
 check(await eventually(async () => (await rail.getByRole('button', { name: /^اعلان‌ها/ }).getAttribute('aria-label')).includes('۴')), 'bell badge updates to ۴');
-await drawer.getByRole('button', { name: 'علامت‌گذاری همه به عنوان خوانده‌شده' }).click();
+await drawer.getByRole('button', { name: 'علامت‌گذاری همه به‌عنوان خوانده‌شده' }).click();
 check(await visible(drawer.getByText('همه اعلان‌ها را خوانده‌اید')), 'mark all read empties unread tab');
 check(await rail.getByText('۴').count() === 0 || true, 'badge cleared');
 await drawer.getByRole('tab', { name: /همه/ }).click();
