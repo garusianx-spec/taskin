@@ -1,0 +1,50 @@
+import type { WorkspaceState } from './workspace-reducer';
+import { BUILT_IN_COLUMNS, BUILT_IN_NOTE_CATEGORIES } from '@/data/reference';
+
+/**
+ * The slices that belong to one workspace. Switching workspaces parks the current values and
+ * restores the target's; everything else — the session, the member's profile and security
+ * settings, permissions, the theme — belongs to the account and survives a switch.
+ */
+export const SCOPED_KEYS = [
+  'tasks',
+  'archivedTasks',
+  'boardColumns',
+  'conversations',
+  'messages',
+  'calendarEvents',
+  'notes',
+  'noteCategories',
+  'notifications',
+  'invitations',
+  'activity',
+  'pinnedConversationIds',
+  'mutedConversationIds',
+  'unreadByConversation',
+  'activeConversationId',
+] as const satisfies ReadonlyArray<keyof WorkspaceState>;
+
+export type WorkspaceScope = Pick<WorkspaceState, (typeof SCOPED_KEYS)[number]>;
+
+/** A workspace nobody has worked in yet: the default board columns and note categories. */
+export const EMPTY_SCOPE: WorkspaceScope = {
+  tasks: [],
+  archivedTasks: [],
+  boardColumns: BUILT_IN_COLUMNS,
+  conversations: [],
+  messages: [],
+  calendarEvents: [],
+  notes: [],
+  noteCategories: BUILT_IN_NOTE_CATEGORIES,
+  notifications: [],
+  invitations: [],
+  activity: [],
+  pinnedConversationIds: [],
+  mutedConversationIds: [],
+  unreadByConversation: {},
+  activeConversationId: '',
+};
+
+export function scopeOf(state: WorkspaceState): WorkspaceScope {
+  return Object.fromEntries(SCOPED_KEYS.map((key) => [key, state[key]])) as unknown as WorkspaceScope;
+}
